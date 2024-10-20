@@ -28,6 +28,15 @@
                     <i class="fas fa-step-forward"></i>
                 </button>
             </div>
+
+            <div class="backend-controls">
+                <button @click="toggleShuffle" class="control-btn shuffle" aria-label="Shuffle">
+                    <i :class="isShuffle ? 'fas fa-random' : 'fas fa-sync'"></i>
+                </button>
+                <div v-if="responseMessage" class="response-message">
+                    {{ responseMessage }}
+                </div>
+            </div>
         </div>
 
         <audio 
@@ -49,6 +58,8 @@ const audioPlayer = ref(null)
 const duration = ref(0)
 const currentTime = ref(0)
 const isPlaying = ref(false)
+const isShuffle = ref(false)
+const responseMessage = ref('false');
 
 const playlist = [
     { 
@@ -151,6 +162,32 @@ onMounted(() => {
 onUnmounted(() => {
     clearInterval(progressInterval)
 })
+
+
+const setCommandData = ref({
+  ip_address: '192.168.141.10',
+  component: 'SensorHead',
+  command: 'LaserOn',
+  data_type: 'Int16',
+  payload: '1',
+})
+
+async function toggleShuffle() {
+    
+    isShuffle.value = !isShuffle.value
+    responseMessage.value = 'Shuffle is toggle'
+
+    try {
+        const response = await $fetch('http://localhost:8000/api/toggle-shuffle', {
+            method: 'POST',
+            body: setCommandData.value,
+        })
+        responseMessage.value = response.message
+    } catch (error) {
+        console.error('Error toggling shuffle:', error)
+    }
+}
+
 </script>
 
 <style scoped>
