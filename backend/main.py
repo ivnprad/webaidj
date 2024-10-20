@@ -33,8 +33,15 @@ def toggle_shuffle(command: Command):
     try:
         if command.payload == None:
             raise HTTPException(status_code=400, detail="Payload is required")
+        
         response = {
-            "message": "we got you"
+            "message":
+            "request acknowledge:\n"
+            f"IP Address: {command.ip_address}\n"
+            f"Component: {command.component}\n"
+            f"Command: {command.command}\n"
+            f"Data Type: {command.data_type}\n"
+            f"Payload: {str(command.payload)}"
         }
         return response
     except Exception as e:
