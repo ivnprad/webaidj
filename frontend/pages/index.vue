@@ -178,7 +178,7 @@ async function toggleShuffle() {
     responseMessage.value = 'Shuffle is toggle'
 
     try {
-        const response = await $fetch('http://localhost:8000/api/toggle-shuffle', {
+        const response = await $fetch('/api/toggle-shuffle', {
             method: 'POST',
             body: setCommandData.value,
         })
