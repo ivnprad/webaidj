@@ -1,6 +1,13 @@
-from fastapi import FastAPI, HTTPException
+#from djmixer.Core.PlaySongs import PlaySongsAlt
+from datetime import datetime, timezone
+from pathlib import Path
+import mimetypes
+from typing import Optional
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
 app = FastAPI()
 
@@ -28,6 +35,76 @@ class Command(BaseModel):
     data_type: str
     payload: int = None
 
+class PlayRequest(BaseModel):
+    path: str
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BACKEND_ROOT = Path(__file__).resolve().parent
+CURRENT_TRACK: Optional[dict] = None 
+
+ALLOWED_AUDIO_EXTENSIONS = {
+    ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"
+}
+ALLOWED_AUDIO_MIME_PREFIXES = ("audio/",)
+
+def validate_audio_file(track_file: Path) -> None:
+    # 1) Extension allowlist
+    ext = track_file.suffix.lower()
+    if ext not in ALLOWED_AUDIO_EXTENSIONS:
+        raise HTTPException(status_code=415, detail=f"Unsupported audio type: {ext or 'none'}")
+
+    # 2) MIME sanity check (defense-in-depth)
+    mime_type, _ = mimetypes.guess_type(track_file.name)
+    if mime_type is None or not mime_type.startswith(ALLOWED_AUDIO_MIME_PREFIXES):
+        raise HTTPException(status_code=415, detail="File is not a supported audio MIME type")
+    
+def _resolve_track_path(track_path: str) -> Path:
+    candidate = Path(track_path)
+    if candidate.is_absolute():
+        return candidate
+    project_candidate = (PROJECT_ROOT / candidate).resolve()
+    if project_candidate.exists():
+        return project_candidate
+    return (BACKEND_ROOT / candidate).resolve()
+
+def _parse_byte_range(range_header: str, file_size: int) -> tuple[int, int]:
+    if not range_header.startswith("bytes="):
+        raise HTTPException(status_code=416, detail="Invalid range unit")
+
+    ranges = range_header.replace("bytes=", "", 1).split(",", 1)[0].strip()
+    if "-" not in ranges:
+        raise HTTPException(status_code=416, detail="Invalid range format")
+
+    start_str, end_str = ranges.split("-", 1)
+    if start_str == "":
+        try:
+            suffix = int(end_str)
+        except ValueError as exc:
+            raise HTTPException(status_code=416, detail="Invalid suffix range") from exc
+        if suffix <= 0:
+            raise HTTPException(status_code=416, detail="Invalid suffix range")
+        start = max(file_size - suffix, 0)
+        end = file_size - 1
+        return start, end
+
+    try:
+        start = int(start_str)
+    except ValueError as exc:
+        raise HTTPException(status_code=416, detail="Invalid range start") from exc
+
+    if end_str == "":
+        end = file_size - 1
+    else:
+        try:
+            end = int(end_str)
+        except ValueError as exc:
+            raise HTTPException(status_code=416, detail="Invalid range end") from exc
+
+    if start < 0 or end < start or start >= file_size:
+        raise HTTPException(status_code=416, detail="Range not satisfiable")
+
+    return start, min(end, file_size - 1)
+
 @app.post("/api/toggle-shuffle")
 def toggle_shuffle(command: Command):
     try:
@@ -47,3 +124,96 @@ def toggle_shuffle(command: Command):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/play")
+def play(payload: PlayRequest):
+    global CURRENT_TRACK
+
+    if not payload.path:
+        raise HTTPException(status_code=400, detail="path is required")
+
+    track_file = _resolve_track_path(payload.path)
+    if not track_file.exists() or not track_file.is_file():
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    validate_audio_file(track_file)
+    CURRENT_TRACK = {
+        "path": payload.path,
+        "absolute_path": str(track_file),
+        "title": track_file.stem,
+        "startedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+    return {
+        "ok": True,
+        "currentTrack": {
+            "path": CURRENT_TRACK["path"],
+            "title": CURRENT_TRACK["title"],
+        },
+        "streamUrl": "/api/audio/current",
+        "startedAt": CURRENT_TRACK["startedAt"],
+    }
+
+@app.get("/api/audio/current")
+def stream_current_audio(request: Request):
+    global CURRENT_TRACK
+
+    if CURRENT_TRACK is None:
+        raise HTTPException(status_code=404, detail="No current track selected")
+
+    track_file = Path(CURRENT_TRACK["absolute_path"])
+    if not track_file.exists() or not track_file.is_file():
+        CURRENT_TRACK = None
+        raise HTTPException(status_code=410, detail="Current track no longer exists")
+
+    file_size = track_file.stat().st_size
+    content_type = mimetypes.guess_type(track_file.name)[0] or "application/octet-stream"
+    range_header = request.headers.get("range")
+
+    start = 0
+    end = file_size - 1
+    status_code = 200 # whole file, all bytes are stream
+    headers = {"Accept-Ranges": "bytes"}
+
+    if range_header:
+        start, end = _parse_byte_range(range_header, file_size)
+        status_code = 206 # return only that part of the file
+        print(f"only part of file: start={start}, end={end}")
+        headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+
+    content_length = end - start + 1
+    headers["Content-Length"] = str(content_length)
+
+    def file_iterator():
+        chunk_size = 1024 * 1024
+        with track_file.open("rb") as f:
+            f.seek(start)
+            remaining = content_length
+            while remaining > 0:
+                read_size = min(chunk_size, remaining)
+                chunk = f.read(read_size)
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    return StreamingResponse(
+        file_iterator(),
+        status_code=status_code,
+        media_type=content_type,
+        headers=headers,
+    )
+
+
+@app.get("/api/player/status")
+def player_status():
+    if CURRENT_TRACK is None:
+        return {"state": "idle", "currentTrack": None}
+
+    return {
+        "state": "playing",
+        "currentTrack": {
+            "path": CURRENT_TRACK["path"],
+            "title": CURRENT_TRACK["title"],
+        },
+        "startedAt": CURRENT_TRACK["startedAt"],
+    }

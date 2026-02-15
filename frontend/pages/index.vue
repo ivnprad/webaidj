@@ -30,6 +30,9 @@
             </div>
 
             <div class="backend-controls">
+                <button @click="streamPlay" class="control-btn stream-play" aria-label="Stream Play">
+                    <i class="fas fa-broadcast-tower"></i>
+                </button>
                 <button @click="toggleShuffle" class="control-btn shuffle" aria-label="Shuffle">
                     <i :class="isShuffle ? 'fas fa-random' : 'fas fa-sync'"></i>
                 </button>
@@ -41,7 +44,7 @@
 
         <audio 
         ref="audioPlayer" 
-        :src="currentTrack.source" 
+        :src="activeAudioSource" 
         preload="medata" 
         @loadedmetadata="onLoadedMetadata"
         @ended="onTrackEnded">
@@ -52,7 +55,7 @@
 
 <script setup>
 
-import { ref , onMounted, onUnmounted} from 'vue'
+import { computed, ref , onMounted, onUnmounted,nextTick} from 'vue'
 
 const audioPlayer = ref(null)
 const duration = ref(0)
@@ -60,6 +63,7 @@ const currentTime = ref(0)
 const isPlaying = ref(false)
 const isShuffle = ref(false)
 const responseMessage = ref('false');
+const streamUrl = ref('')
 
 const playlist = [
     { 
@@ -84,6 +88,7 @@ const playlist = [
 
 const currentTrackIndex = ref(0)
 const currentTrack = ref(playlist[0])
+const activeAudioSource = computed(() => streamUrl.value || currentTrack.value.source)
 
 const albumArtStyle = computed(() => ({
   backgroundImage: `url(${currentTrack.value.albumArt})`,
@@ -185,6 +190,22 @@ async function toggleShuffle() {
         responseMessage.value = response.message
     } catch (error) {
         console.error('Error toggling shuffle:', error)
+    }
+}
+
+async function streamPlay() {
+    try {
+        const response = await $fetch('/api/play', {
+            method: 'POST',
+            body: { path: '/Users/ivanherrera/Music/Salsa/cuba/timba/100MBP/Mi_Historia_Entre_Tus_Dedos.m4a' },
+        })
+
+        streamUrl.value = `${response.streamUrl}?t=${Date.now()}`
+        await nextTick()
+        await audioPlayer.value.play()
+        isPlaying.value = true
+    } catch (error) {
+        console.error('Error starting stream playback:', error)
     }
 }
 
