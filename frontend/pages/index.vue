@@ -67,6 +67,11 @@ const isShuffle = ref(false)
 const responseMessage = ref('false');
 const streamUrl = ref('')
 const streamTrack = ref(null) // {title, artist}
+const streamPlaylist = ref([
+  '/Users/ivanherrera/Music/Salsa/cuba/timba/100MBP/Mi_Historia_Entre_Tus_Dedos.m4a',
+  '/Users/ivanherrera/Music/Salsa/colombianas/90MBP/01_Oiga_Mir_Vea.m4a',
+  '/Users/ivanherrera/Music/Salsa/romanticas/88MBP/03_Conciencia.m4a'
+])
 
 const playlist = [
     { 
@@ -155,8 +160,12 @@ const previousTrack = () => {
     }, 0)
 }
 
-const onTrackEnded = () => {
-    nextTrack()
+const onTrackEnded = async() => {
+  if (streamUrl.value) {
+    await playNextStreamTrack()
+    return
+  }
+  nextTrack()
 }
 
 let progressInterval
@@ -201,7 +210,7 @@ async function streamPlay() {
     try {
         const response = await $fetch('/api/play', {
             method: 'POST',
-            body: { path: '/Users/ivanherrera/Music/Salsa/cuba/timba/100MBP/Mi_Historia_Entre_Tus_Dedos.m4a' },
+            body: { paths: streamPlaylist.value, start_index: 0 },
         })
 
         streamTrack.value = response.currentTrack
@@ -212,6 +221,15 @@ async function streamPlay() {
     } catch (error) {
         console.error('Error starting stream playback:', error)
     }
+}
+
+async function playNextStreamTrack() {
+  const response = await $fetch('/api/play/next', { method: 'POST' })
+  streamTrack.value = response.currentTrack
+  streamUrl.value = `${response.streamUrl}?t=${Date.now()}`
+  await nextTick()
+  await audioPlayer.value.play()
+  isPlaying.value = true
 }
 
 </script>

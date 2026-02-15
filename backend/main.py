@@ -38,7 +38,45 @@ class Command(BaseModel):
     payload: int = None
 
 class PlayRequest(BaseModel):
-    path: str
+    path: Optional[str]=None # backward compatible
+    paths: list[str]=[]#playlist
+    start_index: int = 0
+
+PLAYLIST: list[dict] = []
+CURRENT_TRACK_INDEX: int = -1
+CURRENT_TRACK: Optional[dict]=None
+
+def _set_current_track(index: int) ->None:
+    global CURRENT_TRACK
+    entry = PLAYLIST[index]
+    track_file = Path(entry["absolute_path"])
+    metadata=_extract_track_metadata(track_file)
+    CURRENT_TRACK={
+        "path": entry["path"],
+        "absolute_path": entry["absolute_path"],
+        "title": metadata["title"],
+        "artist": metadata["artist"],
+        "cover_data": metadata["cover_data"],
+        "cover_mime": metadata["cover_mime"],
+        "startedAt": datetime.now(timezone.utc).isoformat(),
+        "index": index,
+        "playlistLength": len(PLAYLIST),
+    }
+
+def CreateResponse():
+    return {
+        "ok": True,
+        "currentTrack": {
+            "path": CURRENT_TRACK["path"],
+            "title": CURRENT_TRACK["title"],
+            "artist": CURRENT_TRACK["artist"],
+            "coverUrl": "/api/audio/current/cover" if CURRENT_TRACK["cover_data"] else None,
+            "index": CURRENT_TRACK["index"],
+            "playlistLength": CURRENT_TRACK["playlistLength"],
+        },
+        "streamUrl": "/api/audio/current",
+        "startedAt": CURRENT_TRACK["startedAt"],
+    }
 
 @app.post("/api/toggle-shuffle")
 def toggle_shuffle(command: Command):
@@ -61,38 +99,37 @@ def toggle_shuffle(command: Command):
 
 @app.post("/api/play")
 def play(payload: PlayRequest):
-    global CURRENT_TRACK
+    global CURRENT_TRACK,PLAYLIST, CURRENT_TRACK_INDEX
 
-    if not payload.path:
-        raise HTTPException(status_code=400, detail="path is required")
+    requested_paths = payload.paths if payload.paths else ([payload.path] if payload.path else [])
+    if not requested_paths:
+        raise HTTPException(status_code=400, detail="path or paths is required")
 
-    track_file = resolve_track_path(payload.path)
-    if not track_file.exists() or not track_file.is_file():
-        raise HTTPException(status_code=404, detail="Track not found")
+    entries = []
+    for p in requested_paths:
+        track_file = resolve_track_path(p)
+        if not track_file.exists() or not track_file.is_file():
+            raise HTTPException(status_code=404, detail=f"Track not found: {p}")
+        validate_audio_file(track_file)
+        entries.append({"path": p, "absolute_path": str(track_file)})
 
-    validate_audio_file(track_file)
-    metadata = _extract_track_metadata(track_file)
-    CURRENT_TRACK = {
-        "path": payload.path,
-        "absolute_path": str(track_file),
-        "title": metadata["title"],
-        "artist": metadata["artist"],
-        "cover_data": metadata["cover_data"],
-        "cover_mime": metadata["cover_mime"],
-        "startedAt": datetime.now(timezone.utc).isoformat(),
-    }
+    PLAYLIST = entries
+    CURRENT_TRACK_INDEX = payload.start_index % len(PLAYLIST)
+    _set_current_track(CURRENT_TRACK_INDEX)
 
-    return {
-        "ok": True,
-        "currentTrack": {
-            "path": CURRENT_TRACK["path"],
-            "title": CURRENT_TRACK["title"],
-            "artist": CURRENT_TRACK["artist"],
-            "coverUrl": "/api/audio/current/cover" if CURRENT_TRACK["cover_data"] else None,
-        },
-        "streamUrl": "/api/audio/current",
-        "startedAt": CURRENT_TRACK["startedAt"],
-    }
+    return CreateResponse()
+
+@app.post("/api/play/next")
+def play_next():
+    global CURRENT_TRACK_INDEX
+
+    if not PLAYLIST:
+        raise HTTPException(status_code=404, detail="Playlist is empty")
+
+    CURRENT_TRACK_INDEX = (CURRENT_TRACK_INDEX + 1) % len(PLAYLIST)
+    _set_current_track(CURRENT_TRACK_INDEX)
+
+    return CreateResponse()
 
 @app.get("/api/audio/current")
 def stream_current_audio(request: Request):
