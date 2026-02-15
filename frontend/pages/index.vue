@@ -3,8 +3,10 @@
         <div class="player-content">
             <div class="album-art" :style="albumArtStyle"></div>
             <div class="track-info">
-                <h2 class="track-title">{{ currentTrack.title }}</h2>
-                <p class="track-artist">{{ currentTrack.artist }}</p>
+                <h2 class="track-title">{{ displayTrack.title }}</h2>
+                <p v-if="displayTrack.artist && displayTrack.artist !='Unknown Artist'"class="track-artist">
+                    {{ displayTrack.artist }}
+                </p>
             </div>
             <div class="progress-container">
                 <div class="time current-time">{{ formatTime(currentTime) }}</div>
@@ -64,6 +66,7 @@ const isPlaying = ref(false)
 const isShuffle = ref(false)
 const responseMessage = ref('false');
 const streamUrl = ref('')
+const streamTrack = ref(null) // {title, artist}
 
 const playlist = [
     { 
@@ -89,6 +92,7 @@ const playlist = [
 const currentTrackIndex = ref(0)
 const currentTrack = ref(playlist[0])
 const activeAudioSource = computed(() => streamUrl.value || currentTrack.value.source)
+const displayTrack = computed(()=>streamTrack.value || currentTrack.value)
 
 const albumArtStyle = computed(() => ({
   backgroundImage: `url(${currentTrack.value.albumArt})`,
@@ -200,6 +204,7 @@ async function streamPlay() {
             body: { path: '/Users/ivanherrera/Music/Salsa/cuba/timba/100MBP/Mi_Historia_Entre_Tus_Dedos.m4a' },
         })
 
+        streamTrack.value = response.currentTrack
         streamUrl.value = `${response.streamUrl}?t=${Date.now()}`
         await nextTick()
         await audioPlayer.value.play()

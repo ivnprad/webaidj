@@ -7,7 +7,8 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from starlette.responses import StreamingResponse
+from starlette.responses import Response, StreamingResponse
+from extractTrackMetaData import _extract_track_metadata
 
 app = FastAPI()
 
@@ -136,10 +137,14 @@ def play(payload: PlayRequest):
         raise HTTPException(status_code=404, detail="Track not found")
 
     validate_audio_file(track_file)
+    metadata = _extract_track_metadata(track_file)
     CURRENT_TRACK = {
         "path": payload.path,
         "absolute_path": str(track_file),
-        "title": track_file.stem,
+        "title": metadata["title"],
+        "artist": metadata["artist"],
+        "cover_data": metadata["cover_data"],
+        "cover_mime": metadata["cover_mime"],
         "startedAt": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -148,6 +153,8 @@ def play(payload: PlayRequest):
         "currentTrack": {
             "path": CURRENT_TRACK["path"],
             "title": CURRENT_TRACK["title"],
+            "artist": CURRENT_TRACK["artist"],
+            "coverUrl": "/api/audio/current/cover" if CURRENT_TRACK["cover_data"] else None,
         },
         "streamUrl": "/api/audio/current",
         "startedAt": CURRENT_TRACK["startedAt"],
@@ -177,7 +184,6 @@ def stream_current_audio(request: Request):
     if range_header:
         start, end = _parse_byte_range(range_header, file_size)
         status_code = 206 # return only that part of the file
-        print(f"only part of file: start={start}, end={end}")
         headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
 
     content_length = end - start + 1
@@ -204,6 +210,20 @@ def stream_current_audio(request: Request):
     )
 
 
+@app.get("/api/audio/current/cover")
+def current_track_cover():
+    if CURRENT_TRACK is None:
+        raise HTTPException(status_code=404, detail="No current track selected")
+
+    cover_data = CURRENT_TRACK.get("cover_data")
+    if not cover_data:
+        raise HTTPException(status_code=404, detail="No cover art available for current track")
+
+    return Response(
+        content=cover_data,
+        media_type=CURRENT_TRACK.get("cover_mime") or "application/octet-stream",
+    )
+
 @app.get("/api/player/status")
 def player_status():
     if CURRENT_TRACK is None:
@@ -214,6 +234,8 @@ def player_status():
         "currentTrack": {
             "path": CURRENT_TRACK["path"],
             "title": CURRENT_TRACK["title"],
+            "artist": CURRENT_TRACK["artist"],
+            "coverUrl": "/api/audio/current/cover" if CURRENT_TRACK.get("cover_data") else None,
         },
         "startedAt": CURRENT_TRACK["startedAt"],
     }
