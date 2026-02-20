@@ -33,14 +33,11 @@
 
 <script setup>
 
-import { computed, ref , onMounted, onUnmounted,nextTick} from 'vue'
+import { computed, ref } from 'vue'
+import { useDualDeckPlayer } from '~/composables/useDualDeckPlayer'
 
-// UI props 
-const isPlaying = ref(false)
 const isShuffle = ref(false)
 const responseMessage = ref('false');
-const currentTime = ref(0)
-const duration = ref(0)
 
 const playlist = [
     { 
@@ -74,15 +71,7 @@ const albumArtStyle = computed(() => ({
   width: '200px',
   height: '200px'
 }));
-
-const audioPlayerLeft = ref(null)
-const audioPlayerRight = ref(null)
-const playerSources = ref(['', ''])
-const activePlayerIndex = ref(0)
-const overlapStarted = ref(false)
-const overlapSeconds = 5 // PLACEHOLDER
 const debugOverlap = true
-const lastNearEndLogSecond = ref(-1)
 const streamUrl = ref('')
 
 const currentTrackIndex = ref(0)
@@ -97,102 +86,39 @@ const logOverlap = (...args) => {
     console.log('[overlap]', ...args)
 }
 
-const getPlayer = (index) => (index === 0 ? audioPlayerLeft.value : audioPlayerRight.value)
-const getActivePlayer = () => getPlayer(activePlayerIndex.value)
-const getInactivePlayerIndex = () => (activePlayerIndex.value === 0 ? 1 : 0)
+const {
+    audioPlayerLeft,
+    audioPlayerRight,
+    playerSources,
+    activePlayerIndex,
+    overlapStarted,
+    isPlaying,
+    currentTime,
+    duration,
+    lastNearEndLogSecond,
+    getPlayer,
+    getActivePlayer,
+    getInactivePlayerIndex,
+    setActivePlayer,
+    setPlayerSource,
+    stopPlayer,
+    togglePlayPause: toggleDeckPlayPause,
+    seekTo,
+    onLoadedMetadata,
+} = useDualDeckPlayer({
+    overlapSeconds: 5,
+    onOverlapTrigger: startNextTrackOverlap,
+    logger: (...args) => logOverlap(...args),
+})
 
-const setPlayerSource = async (index, source) => {
-    playerSources.value[index] = source
-    await nextTick()
+playerSources.value[activePlayerIndex.value] = currentTrack.value.source
+
+const togglePlayPause = async () => {
+    await toggleDeckPlayPause()
 }
 
-const stopPlayer = (index) => {
-    const player = getPlayer(index)
-    if (!player) return
-    player.pause()
-    player.currentTime = 0
-}
-
-const pausePlayer = (index) => {
-    const player = getPlayer(index)
-    if (!player) return
-    player.pause()
-}
-
-const togglePlayPause = () => {
-    const activePlayer = getActivePlayer()
-    if (!activePlayer) return
-
-    if (activePlayer.paused) {
-        activePlayer.play()
-        isPlaying.value = true
-        logOverlap('play', {
-            player: activePlayerIndex.value,
-            src: playerSources.value[activePlayerIndex.value],
-        })
-    } else {
-        pausePlayer(0)
-        pausePlayer(1)
-        isPlaying.value = false
-        logOverlap('pause')
-    }
-}
-
-const onLoadedMetadata = (playerIndex) => {
-    if (playerIndex !== activePlayerIndex.value) return
-    const activePlayer = getActivePlayer()
-    if (activePlayer) {
-        duration.value = activePlayer.duration;
-        logOverlap('metadata loaded', {
-            player: playerIndex,
-            duration: activePlayer.duration,
-            src: playerSources.value[playerIndex],
-        })
-    }
-}
-
-const updateProgress = () => {
-    const activePlayer = getActivePlayer()
-    if (!activePlayer) return
-
-    currentTime.value = activePlayer.currentTime
-    duration.value = Number.isFinite(activePlayer.duration) ? activePlayer.duration : 0
-
-    const remaining = duration.value - currentTime.value
-    if (Number.isFinite(remaining) && remaining <= overlapSeconds + 1 && remaining >= 0) {
-        const remainingFloor = Math.floor(remaining)
-        if (remainingFloor !== lastNearEndLogSecond.value) {
-            lastNearEndLogSecond.value = remainingFloor
-            logOverlap('near end', {
-                player: activePlayerIndex.value,
-                currentTime: currentTime.value.toFixed(2),
-                duration: duration.value.toFixed(2),
-                remaining: remaining.toFixed(2),
-                overlapStarted: overlapStarted.value,
-                isPlaying: isPlaying.value,
-            })
-        }
-    }
-
-    if (
-        isPlaying.value &&
-        !overlapStarted.value &&
-        duration.value > overlapSeconds &&
-        currentTime.value >= duration.value - overlapSeconds
-    ) {
-        logOverlap('trigger reached', {
-            currentTime: currentTime.value.toFixed(2),
-            duration: duration.value.toFixed(2),
-            threshold: (duration.value - overlapSeconds).toFixed(2),
-        })
-        startNextTrackOverlap()
-    }
-}
 const onProgressChangeFromShell = (time) => {
-  const activePlayer = getActivePlayer()
-  if (!activePlayer) return
-  activePlayer.currentTime = Number(time)
-  currentTime.value = Number(time)
+  seekTo(Number(time))
 }
 
 const playLocalTrack = async (trackIndex) => {
@@ -211,7 +137,7 @@ const playLocalTrack = async (trackIndex) => {
     duration.value = 0
 
     await setPlayerSource(nextActiveIndex, currentTrack.value.source)
-    activePlayerIndex.value = nextActiveIndex
+    setActivePlayer(nextActiveIndex)
 
     const activePlayer = getActivePlayer()
     if (!activePlayer) return
@@ -237,8 +163,7 @@ const previousTrack = async () => {
     await playLocalTrack(previousIndex)
 }
 
-const startNextTrackOverlap = async () => {
-    overlapStarted.value = true
+async function startNextTrackOverlap() {
     logOverlap('start overlap begin', {
         fromTrackIndex: currentTrackIndex.value,
         activePlayer: activePlayerIndex.value,
@@ -262,7 +187,7 @@ const startNextTrackOverlap = async () => {
 
         incomingPlayer.currentTime = 0
         await incomingPlayer.play()
-        activePlayerIndex.value = incomingPlayerIndex
+        setActivePlayer(incomingPlayerIndex)
         isPlaying.value = true
         currentTime.value = 0
         duration.value = Number.isFinite(incomingPlayer.duration) ? incomingPlayer.duration : 0
@@ -275,9 +200,6 @@ const startNextTrackOverlap = async () => {
     } catch (error) {
         console.error('Error starting overlap playback:', error)
         logOverlap('start overlap failed', error)
-    } finally {
-        overlapStarted.value = false
-        logOverlap('start overlap end')
     }
 }
 
@@ -294,17 +216,6 @@ const onTrackEnded = async(playerIndex) => {
   }
   await nextTrack()
 }
-
-let progressInterval
-
-onMounted(() => {
-    playerSources.value[activePlayerIndex.value] = currentTrack.value.source
-    progressInterval = setInterval(updateProgress, 100)
-})
-
-onUnmounted(() => {
-    clearInterval(progressInterval)
-})
 
 
 const setCommandData = ref({
@@ -335,7 +246,7 @@ async function streamPlay() {
     try {
         stopPlayer(0)
         stopPlayer(1)
-        activePlayerIndex.value = 0
+        setActivePlayer(0)
         overlapStarted.value = false
 
         const response = await $fetch('/api/play', {
@@ -373,7 +284,7 @@ async function applyStreamTrackResponse(response, options = { overlap: false, di
 
   incomingPlayer.currentTime = 0
   await incomingPlayer.play()
-  activePlayerIndex.value = incomingPlayerIndex
+  setActivePlayer(incomingPlayerIndex)
   streamTrack.value = response.currentTrack
   streamUrl.value = nextUrl
   currentTime.value = 0
