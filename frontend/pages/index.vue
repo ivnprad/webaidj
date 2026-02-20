@@ -5,14 +5,12 @@
   :current-time="currentTime"
   :duration="duration"
   :is-playing="isPlaying"
-  :is-shuffle="isShuffle"
   :response-message="responseMessage"
   @previous="previousTrack"
   @play-pause="togglePlayPause"
   @next="nextTrack"
   @seek="onProgressChangeFromShell"
   @stream-play="streamPlay"
-  @toggle-shuffle="toggleShuffle"
 />
 
 <audio
@@ -36,7 +34,6 @@
 import { computed, ref } from 'vue'
 import { useDualDeckPlayer } from '~/composables/useDualDeckPlayer'
 
-const isShuffle = ref(false)
 const responseMessage = ref('false');
 
 const playlist = [
@@ -225,22 +222,6 @@ const setCommandData = ref({
   data_type: 'Int16',
   payload: '1',
 })
-
-async function toggleShuffle() {
-    
-    isShuffle.value = !isShuffle.value
-    responseMessage.value = 'Shuffle is toggle'
-
-    try {
-        const response = await $fetch('/api/toggle-shuffle', {
-            method: 'POST',
-            body: setCommandData.value,
-        })
-        responseMessage.value = response.message
-    } catch (error) {
-        console.error('Error toggling shuffle:', error)
-    }
-}
 
 async function streamPlay() {
     try {

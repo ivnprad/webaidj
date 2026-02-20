@@ -36,14 +36,8 @@
 
       <div class="backend-controls">
         <button @click="emit('stream-play')" class="control-btn stream-play" aria-label="Stream Play">
-          <i class="fas fa-broadcast-tower"></i>
+          <i class="fas fa-random"></i>
         </button>
-        <button @click="emit('toggle-shuffle')" class="control-btn shuffle" aria-label="Shuffle">
-          <i :class="isShuffle ? 'fas fa-random' : 'fas fa-sync'"></i>
-        </button>
-        <div v-if="responseMessage" class="response-message">
-          {{ responseMessage }}
-        </div>
       </div>
     </div>
   </div>
@@ -58,8 +52,6 @@ const props = defineProps({
   currentTime: { type: Number, required: true },
   duration: { type: Number, required: true },
   isPlaying: { type: Boolean, required: true },
-  isShuffle: { type: Boolean, required: true },
-  responseMessage: { type: String, default: '' },
 })
 
 const emit = defineEmits([

@@ -32,13 +32,6 @@ app.add_middleware(
 async def root():
     return {"message": "Hello World"}
 
-class Command(BaseModel):
-    ip_address: str
-    component: str
-    command: str
-    data_type: str
-    payload: int = None
-
 class PlayRequest(BaseModel):
     path: Optional[str]=None # backward compatible
     paths: list[str]=[]#playlist
@@ -125,25 +118,6 @@ def _stream_audio_file(track_file: Path, request: Request):
         media_type=content_type,
         headers=headers,
     )
-
-@app.post("/api/toggle-shuffle")
-def toggle_shuffle(command: Command):
-    try:
-        if command.payload == None:
-            raise HTTPException(status_code=400, detail="Payload is required")
-        
-        response = {
-            "message":
-            "request acknowledge:\n"
-            f"IP Address: {command.ip_address}\n"
-            f"Component: {command.component}\n"
-            f"Command: {command.command}\n"
-            f"Data Type: {command.data_type}\n"
-            f"Payload: {str(command.payload)}"
-        }
-        return response
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/play")
 def play(payload: PlayRequest):
