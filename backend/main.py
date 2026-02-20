@@ -50,7 +50,7 @@ def _set_current_track(index: int) ->None:
     global CURRENT_TRACK
     entry = PLAYLIST[index]
     track_file = Path(entry["absolute_path"])
-    metadata=_extract_track_metadata(track_file)
+    metadata = _extract_track_metadata(track_file)
     CURRENT_TRACK={
         "path": entry["path"],
         "absolute_path": entry["absolute_path"],
@@ -63,6 +63,14 @@ def _set_current_track(index: int) ->None:
         "playlistLength": len(PLAYLIST),
     }
 
+def _stream_url_for_index(index: int) -> str:
+    return f"/api/audio/playlist/{index}"
+
+def _cover_url_for_index(index: int, has_cover: bool) -> Optional[str]:
+    if not has_cover:
+        return None
+    return f"/api/audio/playlist/{index}/cover"
+
 def CreateResponse():
     return {
         "ok": True,
@@ -70,79 +78,15 @@ def CreateResponse():
             "path": CURRENT_TRACK["path"],
             "title": CURRENT_TRACK["title"],
             "artist": CURRENT_TRACK["artist"],
-            "coverUrl": "/api/audio/current/cover" if CURRENT_TRACK["cover_data"] else None,
+            "coverUrl": _cover_url_for_index(CURRENT_TRACK["index"], bool(CURRENT_TRACK["cover_data"])),
             "index": CURRENT_TRACK["index"],
             "playlistLength": CURRENT_TRACK["playlistLength"],
         },
-        "streamUrl": "/api/audio/current",
+        "streamUrl": _stream_url_for_index(CURRENT_TRACK["index"]),
         "startedAt": CURRENT_TRACK["startedAt"],
     }
 
-@app.post("/api/toggle-shuffle")
-def toggle_shuffle(command: Command):
-    try:
-        if command.payload == None:
-            raise HTTPException(status_code=400, detail="Payload is required")
-        
-        response = {
-            "message":
-            "request acknowledge:\n"
-            f"IP Address: {command.ip_address}\n"
-            f"Component: {command.component}\n"
-            f"Command: {command.command}\n"
-            f"Data Type: {command.data_type}\n"
-            f"Payload: {str(command.payload)}"
-        }
-        return response
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/play")
-def play(payload: PlayRequest):
-    global CURRENT_TRACK,PLAYLIST, CURRENT_TRACK_INDEX
-
-    requested_paths = payload.paths if payload.paths else ([payload.path] if payload.path else [])
-    if not requested_paths:
-        raise HTTPException(status_code=400, detail="path or paths is required")
-
-    entries = []
-    for p in requested_paths:
-        track_file = resolve_track_path(p)
-        if not track_file.exists() or not track_file.is_file():
-            raise HTTPException(status_code=404, detail=f"Track not found: {p}")
-        validate_audio_file(track_file)
-        entries.append({"path": p, "absolute_path": str(track_file)})
-
-    PLAYLIST = entries
-    CURRENT_TRACK_INDEX = payload.start_index % len(PLAYLIST)
-    _set_current_track(CURRENT_TRACK_INDEX)
-
-    return CreateResponse()
-
-@app.post("/api/play/next")
-def play_next():
-    global CURRENT_TRACK_INDEX
-
-    if not PLAYLIST:
-        raise HTTPException(status_code=404, detail="Playlist is empty")
-
-    CURRENT_TRACK_INDEX = (CURRENT_TRACK_INDEX + 1) % len(PLAYLIST)
-    _set_current_track(CURRENT_TRACK_INDEX)
-
-    return CreateResponse()
-
-@app.get("/api/audio/current")
-def stream_current_audio(request: Request):
-    global CURRENT_TRACK
-
-    if CURRENT_TRACK is None:
-        raise HTTPException(status_code=404, detail="No current track selected")
-
-    track_file = Path(CURRENT_TRACK["absolute_path"])
-    if not track_file.exists() or not track_file.is_file():
-        CURRENT_TRACK = None
-        raise HTTPException(status_code=410, detail="Current track no longer exists")
-
+def _stream_audio_file(track_file: Path, request: Request):
     file_size = track_file.stat().st_size
     content_type = mimetypes.guess_type(track_file.name)[0] or "application/octet-stream"
     range_header = request.headers.get("range")
@@ -180,6 +124,101 @@ def stream_current_audio(request: Request):
         headers=headers,
     )
 
+@app.post("/api/toggle-shuffle")
+def toggle_shuffle(command: Command):
+    try:
+        if command.payload == None:
+            raise HTTPException(status_code=400, detail="Payload is required")
+        
+        response = {
+            "message":
+            "request acknowledge:\n"
+            f"IP Address: {command.ip_address}\n"
+            f"Component: {command.component}\n"
+            f"Command: {command.command}\n"
+            f"Data Type: {command.data_type}\n"
+            f"Payload: {str(command.payload)}"
+        }
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/play")
+def play(payload: PlayRequest):
+    global CURRENT_TRACK,PLAYLIST, CURRENT_TRACK_INDEX
+
+    requested_paths = payload.paths if payload.paths else ([payload.path] if payload.path else [])
+    if not requested_paths:
+        raise HTTPException(status_code=400, detail="path or paths is required")
+
+    entries = []
+    for p in requested_paths:
+        track_file = resolve_track_path(p)
+        if not track_file.exists() or not track_file.is_file():
+            raise HTTPException(status_code=404, detail=f"Track not found: {p}")
+        validate_audio_file(track_file)
+        entries.append({
+            "path": p,
+            "absolute_path": str(track_file),
+        })
+
+    PLAYLIST = entries
+    CURRENT_TRACK_INDEX = payload.start_index % len(PLAYLIST)
+    _set_current_track(CURRENT_TRACK_INDEX)
+
+    return CreateResponse()
+
+@app.post("/api/play/next")
+def play_next():
+    global CURRENT_TRACK_INDEX
+
+    if not PLAYLIST:
+        raise HTTPException(status_code=404, detail="Playlist is empty")
+
+    CURRENT_TRACK_INDEX = (CURRENT_TRACK_INDEX + 1) % len(PLAYLIST)
+    _set_current_track(CURRENT_TRACK_INDEX)
+
+    return CreateResponse()
+
+@app.post("/api/play/previous")
+def play_previous():
+    global CURRENT_TRACK_INDEX
+
+    if not PLAYLIST:
+        raise HTTPException(status_code=404, detail="Playlist is empty")
+
+    CURRENT_TRACK_INDEX = (CURRENT_TRACK_INDEX - 1 + len(PLAYLIST)) % len(PLAYLIST)
+    _set_current_track(CURRENT_TRACK_INDEX)
+
+    return CreateResponse()
+
+@app.get("/api/audio/current")
+def stream_current_audio(request: Request):
+    global CURRENT_TRACK
+
+    if CURRENT_TRACK is None:
+        raise HTTPException(status_code=404, detail="No current track selected")
+
+    track_file = Path(CURRENT_TRACK["absolute_path"])
+    if not track_file.exists() or not track_file.is_file():
+        CURRENT_TRACK = None
+        raise HTTPException(status_code=410, detail="Current track no longer exists")
+
+    return _stream_audio_file(track_file, request)
+
+@app.get("/api/audio/playlist/{index}")
+def stream_playlist_audio(index: int, request: Request):
+    if not PLAYLIST:
+        raise HTTPException(status_code=404, detail="Playlist is empty")
+    if index < 0 or index >= len(PLAYLIST):
+        raise HTTPException(status_code=404, detail=f"Track index out of range: {index}")
+
+    track_file = Path(PLAYLIST[index]["absolute_path"])
+    if not track_file.exists() or not track_file.is_file():
+        raise HTTPException(status_code=410, detail=f"Track no longer exists at index {index}")
+
+    return _stream_audio_file(track_file, request)
+
 
 @app.get("/api/audio/current/cover")
 def current_track_cover():
@@ -195,6 +234,27 @@ def current_track_cover():
         media_type=CURRENT_TRACK.get("cover_mime") or "application/octet-stream",
     )
 
+@app.get("/api/audio/playlist/{index}/cover")
+def playlist_track_cover(index: int):
+    if not PLAYLIST:
+        raise HTTPException(status_code=404, detail="Playlist is empty")
+    if index < 0 or index >= len(PLAYLIST):
+        raise HTTPException(status_code=404, detail=f"Track index out of range: {index}")
+
+    track_file = Path(PLAYLIST[index]["absolute_path"])
+    if not track_file.exists() or not track_file.is_file():
+        raise HTTPException(status_code=410, detail=f"Track no longer exists at index {index}")
+
+    metadata = _extract_track_metadata(track_file)
+    cover_data = metadata.get("cover_data")
+    if not cover_data:
+        raise HTTPException(status_code=404, detail=f"No cover art available for index {index}")
+
+    return Response(
+        content=cover_data,
+        media_type=metadata.get("cover_mime") or "application/octet-stream",
+    )
+
 @app.get("/api/player/status")
 def player_status():
     if CURRENT_TRACK is None:
@@ -206,7 +266,7 @@ def player_status():
             "path": CURRENT_TRACK["path"],
             "title": CURRENT_TRACK["title"],
             "artist": CURRENT_TRACK["artist"],
-            "coverUrl": "/api/audio/current/cover" if CURRENT_TRACK.get("cover_data") else None,
+            "coverUrl": _cover_url_for_index(CURRENT_TRACK["index"], bool(CURRENT_TRACK.get("cover_data"))),
         },
         "startedAt": CURRENT_TRACK["startedAt"],
     }

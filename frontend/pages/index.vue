@@ -44,12 +44,19 @@
             </div>
         </div>
 
-        <audio 
-        ref="audioPlayer" 
-        :src="activeAudioSource" 
-        preload="medata" 
-        @loadedmetadata="onLoadedMetadata"
-        @ended="onTrackEnded">
+        <audio
+        ref="audioPlayerLeft"
+        :src="playerSources[0]"
+        preload="metadata"
+        @loadedmetadata="onLoadedMetadata(0)"
+        @ended="onTrackEnded(0)">
+        </audio>
+        <audio
+        ref="audioPlayerRight"
+        :src="playerSources[1]"
+        preload="metadata"
+        @loadedmetadata="onLoadedMetadata(1)"
+        @ended="onTrackEnded(1)">
         </audio>
 
     </div>
@@ -59,7 +66,14 @@
 
 import { computed, ref , onMounted, onUnmounted,nextTick} from 'vue'
 
-const audioPlayer = ref(null)
+const audioPlayerLeft = ref(null)
+const audioPlayerRight = ref(null)
+const playerSources = ref(['', ''])
+const activePlayerIndex = ref(0)
+const overlapStarted = ref(false)
+const overlapSeconds = 5 // PLACEHOLDER
+const debugOverlap = true
+const lastNearEndLogSecond = ref(-1)
 const duration = ref(0)
 const currentTime = ref(0)
 const isPlaying = ref(false)
@@ -96,7 +110,6 @@ const playlist = [
 
 const currentTrackIndex = ref(0)
 const currentTrack = ref(playlist[0])
-const activeAudioSource = computed(() => streamUrl.value || currentTrack.value.source)
 const displayTrack = computed(()=>streamTrack.value || currentTrack.value)
 
 const albumArtStyle = computed(() => ({
@@ -114,66 +127,215 @@ const formatTime = (time) => {
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
 }
 
+const logOverlap = (...args) => {
+    if (!debugOverlap) return
+    console.log('[overlap]', ...args)
+}
+
+const getPlayer = (index) => (index === 0 ? audioPlayerLeft.value : audioPlayerRight.value)
+const getActivePlayer = () => getPlayer(activePlayerIndex.value)
+const getInactivePlayerIndex = () => (activePlayerIndex.value === 0 ? 1 : 0)
+
+const setPlayerSource = async (index, source) => {
+    playerSources.value[index] = source
+    await nextTick()
+}
+
+const stopPlayer = (index) => {
+    const player = getPlayer(index)
+    if (!player) return
+    player.pause()
+    player.currentTime = 0
+}
+
+const pausePlayer = (index) => {
+    const player = getPlayer(index)
+    if (!player) return
+    player.pause()
+}
+
 const togglePlayPause = () => {
-    if (audioPlayer.value.paused) {
-        audioPlayer.value.play()
+    const activePlayer = getActivePlayer()
+    if (!activePlayer) return
+
+    if (activePlayer.paused) {
+        activePlayer.play()
         isPlaying.value = true
+        logOverlap('play', {
+            player: activePlayerIndex.value,
+            src: playerSources.value[activePlayerIndex.value],
+        })
     } else {
-        audioPlayer.value.pause()
+        pausePlayer(0)
+        pausePlayer(1)
         isPlaying.value = false
+        logOverlap('pause')
     }
 }
 
-const onLoadedMetadata = () => {
-    if (audioPlayer.value) {
-        duration.value = audioPlayer.value.duration;
+const onLoadedMetadata = (playerIndex) => {
+    if (playerIndex !== activePlayerIndex.value) return
+    const activePlayer = getActivePlayer()
+    if (activePlayer) {
+        duration.value = activePlayer.duration;
+        logOverlap('metadata loaded', {
+            player: playerIndex,
+            duration: activePlayer.duration,
+            src: playerSources.value[playerIndex],
+        })
     }
 }
 
 const updateProgress = () => {
-    currentTime.value = audioPlayer.value.currentTime
+    const activePlayer = getActivePlayer()
+    if (!activePlayer) return
+
+    currentTime.value = activePlayer.currentTime
+    duration.value = Number.isFinite(activePlayer.duration) ? activePlayer.duration : 0
+
+    const remaining = duration.value - currentTime.value
+    if (Number.isFinite(remaining) && remaining <= overlapSeconds + 1 && remaining >= 0) {
+        const remainingFloor = Math.floor(remaining)
+        if (remainingFloor !== lastNearEndLogSecond.value) {
+            lastNearEndLogSecond.value = remainingFloor
+            logOverlap('near end', {
+                player: activePlayerIndex.value,
+                currentTime: currentTime.value.toFixed(2),
+                duration: duration.value.toFixed(2),
+                remaining: remaining.toFixed(2),
+                overlapStarted: overlapStarted.value,
+                isPlaying: isPlaying.value,
+            })
+        }
+    }
+
+    if (
+        isPlaying.value &&
+        !overlapStarted.value &&
+        duration.value > overlapSeconds &&
+        currentTime.value >= duration.value - overlapSeconds
+    ) {
+        logOverlap('trigger reached', {
+            currentTime: currentTime.value.toFixed(2),
+            duration: duration.value.toFixed(2),
+            threshold: (duration.value - overlapSeconds).toFixed(2),
+        })
+        startNextTrackOverlap()
+    }
 }
 
 const onProgressChange = (event) => {
+    const activePlayer = getActivePlayer()
+    if (!activePlayer) return
     const time = Number(event.target.value)
-    audioPlayer.value.currentTime = time
+    activePlayer.currentTime = time
     currentTime.value = time
 }
 
-const nextTrack = () => {
-    currentTrackIndex.value = (currentTrackIndex.value + 1) % playlist.length
-    currentTrack.value = playlist[currentTrackIndex.value]
-    isPlaying.value = false
-    setTimeout(() => {
-        audioPlayer.value.play()
-        isPlaying.value = true
-    }, 0)
+const playLocalTrack = async (trackIndex) => {
+    streamUrl.value = ''
+    streamTrack.value = null
+    overlapStarted.value = false
+
+    stopPlayer(0)
+    stopPlayer(1)
+
+    const nextActiveIndex = getInactivePlayerIndex()
+
+    currentTrackIndex.value = trackIndex
+    currentTrack.value = playlist[trackIndex]
+    currentTime.value = 0
+    duration.value = 0
+
+    await setPlayerSource(nextActiveIndex, currentTrack.value.source)
+    activePlayerIndex.value = nextActiveIndex
+
+    const activePlayer = getActivePlayer()
+    if (!activePlayer) return
+    await activePlayer.play()
+    isPlaying.value = true
 }
 
-const previousTrack = () => {
-    currentTrackIndex.value = (currentTrackIndex.value - 1 + playlist.length) % playlist.length
-    currentTrack.value = playlist[currentTrackIndex.value]
-    isPlaying.value = false
-    setTimeout(() => {
-        audioPlayer.value.play()
-        isPlaying.value = true
-    }, 0)
+const nextTrack = async () => {
+    if (streamUrl.value) {
+        await playNextStreamTrack()
+        return
+    }
+    const nextIndex = (currentTrackIndex.value + 1) % playlist.length
+    await playLocalTrack(nextIndex)
 }
 
-const onTrackEnded = async() => {
+const previousTrack = async () => {
+    if (streamUrl.value) {
+        await playPreviousStreamTrack()
+        return
+    }
+    const previousIndex = (currentTrackIndex.value - 1 + playlist.length) % playlist.length
+    await playLocalTrack(previousIndex)
+}
+
+const startNextTrackOverlap = async () => {
+    overlapStarted.value = true
+    logOverlap('start overlap begin', {
+        fromTrackIndex: currentTrackIndex.value,
+        activePlayer: activePlayerIndex.value,
+    })
+
+    try {
+        if (streamUrl.value) {
+            await playNextStreamTrack({ overlap: true })
+            return
+        }
+
+        const nextIndex = (currentTrackIndex.value + 1) % playlist.length
+        const incomingPlayerIndex = getInactivePlayerIndex()
+
+        currentTrackIndex.value = nextIndex
+        currentTrack.value = playlist[nextIndex]
+
+        await setPlayerSource(incomingPlayerIndex, currentTrack.value.source)
+        const incomingPlayer = getPlayer(incomingPlayerIndex)
+        if (!incomingPlayer) return
+
+        incomingPlayer.currentTime = 0
+        await incomingPlayer.play()
+        activePlayerIndex.value = incomingPlayerIndex
+        isPlaying.value = true
+        currentTime.value = 0
+        duration.value = Number.isFinite(incomingPlayer.duration) ? incomingPlayer.duration : 0
+        lastNearEndLogSecond.value = -1
+        logOverlap('next started', {
+            toTrackIndex: nextIndex,
+            incomingPlayer: incomingPlayerIndex,
+            src: playerSources.value[incomingPlayerIndex],
+        })
+    } catch (error) {
+        console.error('Error starting overlap playback:', error)
+        logOverlap('start overlap failed', error)
+    } finally {
+        overlapStarted.value = false
+        logOverlap('start overlap end')
+    }
+}
+
+const onTrackEnded = async(playerIndex) => {
+  logOverlap('ended event', { playerIndex, activePlayer: activePlayerIndex.value })
+  if (playerIndex !== activePlayerIndex.value) {
+    stopPlayer(playerIndex)
+    return
+  }
+
   if (streamUrl.value) {
     await playNextStreamTrack()
     return
   }
-  nextTrack()
+  await nextTrack()
 }
 
 let progressInterval
 
 onMounted(() => {
-    if (audioPlayer.value) {
-        duration.value = audioPlayer.value.duration;
-    }
+    playerSources.value[activePlayerIndex.value] = currentTrack.value.source
     progressInterval = setInterval(updateProgress, 100)
 })
 
@@ -208,6 +370,11 @@ async function toggleShuffle() {
 
 async function streamPlay() {
     try {
+        stopPlayer(0)
+        stopPlayer(1)
+        activePlayerIndex.value = 0
+        overlapStarted.value = false
+
         const response = await $fetch('/api/play', {
             method: 'POST',
             body: { paths: streamPlaylist.value, start_index: 0 },
@@ -215,21 +382,62 @@ async function streamPlay() {
 
         streamTrack.value = response.currentTrack
         streamUrl.value = `${response.streamUrl}?t=${Date.now()}`
-        await nextTick()
-        await audioPlayer.value.play()
+        await setPlayerSource(activePlayerIndex.value, streamUrl.value)
+        await getActivePlayer().play()
+        currentTime.value = 0
+        duration.value = 0
+        lastNearEndLogSecond.value = -1
         isPlaying.value = true
     } catch (error) {
         console.error('Error starting stream playback:', error)
     }
 }
 
-async function playNextStreamTrack() {
-  const response = await $fetch('/api/play/next', { method: 'POST' })
+async function applyStreamTrackResponse(response, options = { overlap: false, direction: 'next' }) {
+  const overlap = Boolean(options.overlap)
+  const direction = options.direction || 'next'
+  const nextUrl = `${response.streamUrl}?t=${Date.now()}`
+  const incomingPlayerIndex = getInactivePlayerIndex()
+
+  if (!overlap) {
+    stopPlayer(0)
+    stopPlayer(1)
+  }
+
+  await setPlayerSource(incomingPlayerIndex, nextUrl)
+  const incomingPlayer = getPlayer(incomingPlayerIndex)
+  if (!incomingPlayer) return
+
+  incomingPlayer.currentTime = 0
+  await incomingPlayer.play()
+  activePlayerIndex.value = incomingPlayerIndex
   streamTrack.value = response.currentTrack
-  streamUrl.value = `${response.streamUrl}?t=${Date.now()}`
-  await nextTick()
-  await audioPlayer.value.play()
+  streamUrl.value = nextUrl
+  currentTime.value = 0
+  duration.value = Number.isFinite(incomingPlayer.duration) ? incomingPlayer.duration : 0
+  lastNearEndLogSecond.value = -1
+
+  logOverlap('stream next started', {
+    direction,
+    overlap,
+    toTrackIndex: response.currentTrack?.index,
+    incomingPlayer: incomingPlayerIndex,
+    src: nextUrl,
+  })
+
   isPlaying.value = true
+}
+
+async function playNextStreamTrack(options = { overlap: false }) {
+  const overlap = Boolean(options.overlap)
+  const response = await $fetch('/api/play/next', { method: 'POST' })
+  await applyStreamTrackResponse(response, { overlap, direction: 'next' })
+}
+
+async function playPreviousStreamTrack(options = { overlap: false }) {
+  const overlap = Boolean(options.overlap)
+  const response = await $fetch('/api/play/previous', { method: 'POST' })
+  await applyStreamTrackResponse(response, { overlap, direction: 'previous' })
 }
 
 </script>
