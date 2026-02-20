@@ -11,6 +11,8 @@ from starlette.responses import Response, StreamingResponse
 from extractTrackMetaData import _extract_track_metadata
 from streamAudio import validate_audio_file,resolve_track_path, parse_byte_range
 
+from Core.CreateListOfSongs import CreateNewListOfSongs
+
 app = FastAPI()
 
 origins = [
@@ -146,8 +148,9 @@ def toggle_shuffle(command: Command):
 @app.post("/api/play")
 def play(payload: PlayRequest):
     global CURRENT_TRACK,PLAYLIST, CURRENT_TRACK_INDEX
-
-    requested_paths = payload.paths if payload.paths else ([payload.path] if payload.path else [])
+ 
+    #requested_paths = payload.paths if payload.paths else ([payload.path] if payload.path else [])
+    requested_paths = CreateNewListOfSongs()
     if not requested_paths:
         raise HTTPException(status_code=400, detail="path or paths is required")
 
