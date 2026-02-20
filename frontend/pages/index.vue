@@ -1,91 +1,46 @@
 <template>
-    <div class="audio-player">
-        <div class="player-content">
-            <div class="album-art" :style="albumArtStyle"></div>
-            <div class="track-info">
-                <h2 class="track-title">{{ displayTrack.title }}</h2>
-                <p v-if="displayTrack.artist && displayTrack.artist !='Unknown Artist'"class="track-artist">
-                    {{ displayTrack.artist }}
-                </p>
-            </div>
-            <div class="progress-container">
-                <div class="time current-time">{{ formatTime(currentTime) }}</div>
-                <input 
-                type="range"
-                class="progress-bar"
-                :max="duration"
-                :value="currentTime"
-                @input="onProgressChange"
-                > 
-                <div class="time duration">{{ formatTime(duration) }}</div>
-            </div> 
-            <div class="controls">
-                <button @click="previousTrack" class="control-btn previous" aria-label="Previous Track">
-                    <i class="fas fa-step-backward"></i>
-                </button>
-                <button @click="togglePlayPause" class="control-btn play" aria-label="Play/Pause">
-                    <i :class="isPlaying? 'fas fa-pause' : 'fas fa-play'"></i>
-                </button>
-                <button @click="nextTrack" class="control-btn next" aria-label="Next Track">
-                    <i class="fas fa-step-forward"></i>
-                </button>
-            </div>
+<AudioPlayerShell
+  :display-track="displayTrack"
+  :album-art-style="albumArtStyle"
+  :current-time="currentTime"
+  :duration="duration"
+  :is-playing="isPlaying"
+  :is-shuffle="isShuffle"
+  :response-message="responseMessage"
+  @previous="previousTrack"
+  @play-pause="togglePlayPause"
+  @next="nextTrack"
+  @seek="onProgressChangeFromShell"
+  @stream-play="streamPlay"
+  @toggle-shuffle="toggleShuffle"
+/>
 
-            <div class="backend-controls">
-                <button @click="streamPlay" class="control-btn stream-play" aria-label="Stream Play">
-                    <i class="fas fa-broadcast-tower"></i>
-                </button>
-                <button @click="toggleShuffle" class="control-btn shuffle" aria-label="Shuffle">
-                    <i :class="isShuffle ? 'fas fa-random' : 'fas fa-sync'"></i>
-                </button>
-                <div v-if="responseMessage" class="response-message">
-                    {{ responseMessage }}
-                </div>
-            </div>
-        </div>
-
-        <audio
-        ref="audioPlayerLeft"
-        :src="playerSources[0]"
-        preload="metadata"
-        @loadedmetadata="onLoadedMetadata(0)"
-        @ended="onTrackEnded(0)">
-        </audio>
-        <audio
-        ref="audioPlayerRight"
-        :src="playerSources[1]"
-        preload="metadata"
-        @loadedmetadata="onLoadedMetadata(1)"
-        @ended="onTrackEnded(1)">
-        </audio>
-
-    </div>
+<audio
+  ref="audioPlayerLeft"
+  :src="playerSources[0]"
+  preload="metadata"
+  @loadedmetadata="onLoadedMetadata(0)"
+  @ended="onTrackEnded(0)"
+/>
+<audio
+  ref="audioPlayerRight"
+  :src="playerSources[1]"
+  preload="metadata"
+  @loadedmetadata="onLoadedMetadata(1)"
+  @ended="onTrackEnded(1)"
+/>
 </template>
 
 <script setup>
 
 import { computed, ref , onMounted, onUnmounted,nextTick} from 'vue'
 
-const audioPlayerLeft = ref(null)
-const audioPlayerRight = ref(null)
-const playerSources = ref(['', ''])
-const activePlayerIndex = ref(0)
-const overlapStarted = ref(false)
-const overlapSeconds = 5 // PLACEHOLDER
-const debugOverlap = true
-const lastNearEndLogSecond = ref(-1)
-const duration = ref(0)
-const currentTime = ref(0)
+// UI props 
 const isPlaying = ref(false)
 const isShuffle = ref(false)
 const responseMessage = ref('false');
-const streamUrl = ref('')
-const streamTrack = ref(null) // {title, artist}
-const streamPlaylist = ref([
-  '/Users/ivanherrera/Music/Salsa/cuba/timba/100MBP/Mi_Historia_Entre_Tus_Dedos.m4a',
-  '/Users/ivanherrera/Music/Salsa/colombianas/90MBP/01_Oiga_Mir_Vea.m4a',
-  '/Users/ivanherrera/Music/Salsa/romanticas/88MBP/03_Conciencia.m4a'
-])
+const currentTime = ref(0)
+const duration = ref(0)
 
 const playlist = [
     { 
@@ -108,10 +63,9 @@ const playlist = [
     }
 ]
 
-const currentTrackIndex = ref(0)
 const currentTrack = ref(playlist[0])
+const streamTrack = ref(null) // {title, artist}
 const displayTrack = computed(()=>streamTrack.value || currentTrack.value)
-
 const albumArtStyle = computed(() => ({
   backgroundImage: `url(${currentTrack.value.albumArt})`,
   backgroundSize: 'cover',
@@ -121,11 +75,22 @@ const albumArtStyle = computed(() => ({
   height: '200px'
 }));
 
-const formatTime = (time) => {
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-}
+const audioPlayerLeft = ref(null)
+const audioPlayerRight = ref(null)
+const playerSources = ref(['', ''])
+const activePlayerIndex = ref(0)
+const overlapStarted = ref(false)
+const overlapSeconds = 5 // PLACEHOLDER
+const debugOverlap = true
+const lastNearEndLogSecond = ref(-1)
+const streamUrl = ref('')
+
+const currentTrackIndex = ref(0)
+const streamPlaylist = ref([
+  '/Users/ivanherrera/Music/Salsa/cuba/timba/100MBP/Mi_Historia_Entre_Tus_Dedos.m4a',
+  '/Users/ivanherrera/Music/Salsa/colombianas/90MBP/01_Oiga_Mir_Vea.m4a',
+  '/Users/ivanherrera/Music/Salsa/romanticas/88MBP/03_Conciencia.m4a'
+])
 
 const logOverlap = (...args) => {
     if (!debugOverlap) return
@@ -223,13 +188,11 @@ const updateProgress = () => {
         startNextTrackOverlap()
     }
 }
-
-const onProgressChange = (event) => {
-    const activePlayer = getActivePlayer()
-    if (!activePlayer) return
-    const time = Number(event.target.value)
-    activePlayer.currentTime = time
-    currentTime.value = time
+const onProgressChangeFromShell = (time) => {
+  const activePlayer = getActivePlayer()
+  if (!activePlayer) return
+  activePlayer.currentTime = Number(time)
+  currentTime.value = Number(time)
 }
 
 const playLocalTrack = async (trackIndex) => {
@@ -441,141 +404,3 @@ async function playPreviousStreamTrack(options = { overlap: false }) {
 }
 
 </script>
-
-<style scoped>
-
-.audio-player {
-    width: 300px;
-    background: linear-gradient(to right, #1e2a78, #ff6b6b); 
-    border-radius: 20px;
-    padding: 20px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-    color: white;
-    font-family: 'Arial', sans-serif;
-}
-
-.player-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-
-/* .album-art {
-    width: 200px;
-    height: 200px;
-    background-image: url('@/assets/images/vecteezy_illustration-of-blue-headphone-headset-and-technology-for_4969269.jpg');
-    background-size: cover;
-    background-position: center;
-    border-radius: 10px;
-} */
-
-.track-info {
-    text-align: center;
-    margin-top: 10px;
-}
-
-.track-title {
-    font-size: 1.2em;
-    margin: 0;
-    font-weight: bold;
-}
-
-.track-artist {
-    font-size: 0.9em;
-    margin: 5px 0 0;
-    opacity: 0.8;
-}
-
-.progress-container {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    margin-top: 5px;
-    justify-content: center;
-}
-
-.time {
-    font-size: 0.8em;
-    width: 35px;
-}
-
-.progress-bar {
-    flex-grow: 1;
-    margin: 0 10px;
-    -webkit-appearance: none;
-    appearance: none;
-    background: rgba(255, 255, 255, 0.2);
-    outline: none;
-    height: 5px;
-    border-radius: 5px;
-}
-
-.progress-bar::-webkit-slider-thumb { 
-    -webkit-appearance: none;
-    appearance: none;
-    width: 15px;
-    height: 15px;
-    background: white;
-    cursor: pointer;
-    border-radius: 50%;
-}
-
-.progress-bar::-moz-range-thumb {
-    width: 15px;
-    height: 15px;
-    background: white;
-    cursor: pointer;
-    border-radius: 50%;
-}
-
-.controls {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.control-btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 24px;
-  cursor: pointer;
-  margin: 0 15px;
-  transition: transform 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.2);
-}
-
-.control-btn:hover {
-  transform: scale(1.1);
-  background-color: rgba(255, 255, 255, 0.3);
-}
-
-.play-pause {
-  font-size: 28px;
-  width: 60px;
-  height: 60px;
-}
-
-@keyframes pulse {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-.play-pause:hover {
-  animation: pulse 1s infinite;
-}
-
-</style>
