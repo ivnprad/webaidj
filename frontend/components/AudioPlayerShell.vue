@@ -22,7 +22,7 @@
         <div class="time duration">{{ formatTime(duration) }}</div>
       </div>
 
-      <div class="controls">
+      <div v-if="showTransportControls" class="controls">
         <button @click="emit('previous')" class="control-btn previous" aria-label="Previous Track">
           <i class="fas fa-step-backward"></i>
         </button>
@@ -52,6 +52,7 @@ const props = defineProps({
   currentTime: { type: Number, required: true },
   duration: { type: Number, required: true },
   isPlaying: { type: Boolean, required: true },
+  showTransportControls: { type: Boolean, default: false },
 })
 
 const emit = defineEmits([

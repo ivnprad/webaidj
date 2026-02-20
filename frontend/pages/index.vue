@@ -5,6 +5,7 @@
   :current-time="currentTime"
   :duration="duration"
   :is-playing="isPlaying"
+  :show-transport-controls="hasStreamInitialized"
   :response-message="responseMessage"
   @previous="previousTrack"
   @play-pause="togglePlayPause"
@@ -34,34 +35,17 @@
 import { computed, ref } from 'vue'
 import { useDualDeckPlayer } from '~/composables/useDualDeckPlayer'
 
-const responseMessage = ref('false');
+const responseMessage = ref('');
+const hasStreamInitialized = ref(false)
 
-const playlist = [
-    { 
-        title: 'Leave Me Alone', 
-        artist: 'Florian bur',
-        source: '/audio/Florian bur - Leave Me Alone.mp3',
-        albumArt: '/assets/images/vecteezy_illustration-of-blue-headphone-headset-and-technology-for_4969269.jpg'
-    },
-    { 
-        title: 'Secret', 
-        artist: 'Florian bur',
-        source: '/audio/04_Florian_bur_Secret_feat_Deryn.mp3',
-        albumArt: '/assets/images/pexels-mark-angelo-sampan-738078-1587927.jpg'
-    },
-    { 
-        title: 'Sound of Heart', 
-        artist: 'Florian bur',
-        source: '/audio/01 Florian bur - Sound of Heart.mp3',
-        albumArt: '/assets/images/vector-dj-disk-1241523.jpg'
-    }
-]
-
-const currentTrack = ref(playlist[0])
 const streamTrack = ref(null) // {title, artist}
-const displayTrack = computed(()=>streamTrack.value || currentTrack.value)
+const displayTrack = computed(() => streamTrack.value || {
+  title: '',
+  artist: 'Unknown Artist',
+  coverUrl: null,
+})
 const albumArtStyle = computed(() => ({
-  backgroundImage: `url(${currentTrack.value.albumArt})`,
+  backgroundImage: `url(${'/assets/images/vector-dj-disk-1241523.jpg'})`,
   backgroundSize: 'cover',
   backgroundPosition: 'center',
   borderRadius: '10px',
@@ -70,8 +54,6 @@ const albumArtStyle = computed(() => ({
 }));
 const debugOverlap = true
 const streamUrl = ref('')
-
-const currentTrackIndex = ref(0)
 
 const logOverlap = (...args) => {
     if (!debugOverlap) return
@@ -103,8 +85,6 @@ const {
     logger: (...args) => logOverlap(...args),
 })
 
-playerSources.value[activePlayerIndex.value] = currentTrack.value.source
-
 const togglePlayPause = async () => {
     await toggleDeckPlayPause()
 }
@@ -113,82 +93,24 @@ const onProgressChangeFromShell = (time) => {
   seekTo(Number(time))
 }
 
-const playLocalTrack = async (trackIndex) => {
-    streamUrl.value = ''
-    streamTrack.value = null
-    overlapStarted.value = false
-
-    stopPlayer(0)
-    stopPlayer(1)
-
-    const nextActiveIndex = getInactivePlayerIndex()
-
-    currentTrackIndex.value = trackIndex
-    currentTrack.value = playlist[trackIndex]
-    currentTime.value = 0
-    duration.value = 0
-
-    await setPlayerSource(nextActiveIndex, currentTrack.value.source)
-    setActivePlayer(nextActiveIndex)
-
-    const activePlayer = getActivePlayer()
-    if (!activePlayer) return
-    await activePlayer.play()
-    isPlaying.value = true
-}
-
 const nextTrack = async () => {
-    if (streamUrl.value) {
-        await playNextStreamTrack()
-        return
-    }
-    const nextIndex = (currentTrackIndex.value + 1) % playlist.length
-    await playLocalTrack(nextIndex)
+    await playNextStreamTrack()
 }
 
 const previousTrack = async () => {
-    if (streamUrl.value) {
         await playPreviousStreamTrack()
-        return
-    }
-    const previousIndex = (currentTrackIndex.value - 1 + playlist.length) % playlist.length
-    await playLocalTrack(previousIndex)
 }
 
 async function startNextTrackOverlap() {
-    logOverlap('start overlap begin', {
-        fromTrackIndex: currentTrackIndex.value,
+    logOverlap('overlap started while leaving this track index', {
+        fromTrackIndex: streamTrack.value?.index??-1,
         activePlayer: activePlayerIndex.value,
     })
 
     try {
-        if (streamUrl.value) {
-            await playNextStreamTrack({ overlap: true })
-            return
-        }
 
-        const nextIndex = (currentTrackIndex.value + 1) % playlist.length
-        const incomingPlayerIndex = getInactivePlayerIndex()
+        await playNextStreamTrack({ overlap: true })
 
-        currentTrackIndex.value = nextIndex
-        currentTrack.value = playlist[nextIndex]
-
-        await setPlayerSource(incomingPlayerIndex, currentTrack.value.source)
-        const incomingPlayer = getPlayer(incomingPlayerIndex)
-        if (!incomingPlayer) return
-
-        incomingPlayer.currentTime = 0
-        await incomingPlayer.play()
-        setActivePlayer(incomingPlayerIndex)
-        isPlaying.value = true
-        currentTime.value = 0
-        duration.value = Number.isFinite(incomingPlayer.duration) ? incomingPlayer.duration : 0
-        lastNearEndLogSecond.value = -1
-        logOverlap('next started', {
-            toTrackIndex: nextIndex,
-            incomingPlayer: incomingPlayerIndex,
-            src: playerSources.value[incomingPlayerIndex],
-        })
     } catch (error) {
         console.error('Error starting overlap playback:', error)
         logOverlap('start overlap failed', error)
@@ -201,22 +123,8 @@ const onTrackEnded = async(playerIndex) => {
     stopPlayer(playerIndex)
     return
   }
-
-  if (streamUrl.value) {
-    await playNextStreamTrack()
-    return
-  }
-  await nextTrack()
+  await playNextStreamTrack()
 }
-
-
-const setCommandData = ref({
-  ip_address: '192.168.141.10',
-  component: 'SensorHead',
-  command: 'LaserOn',
-  data_type: 'Int16',
-  payload: '1',
-})
 
 async function streamPlay() {
     try {
@@ -230,6 +138,7 @@ async function streamPlay() {
         })
 
         streamTrack.value = response.currentTrack
+        hasStreamInitialized.value = true
         streamUrl.value = `${response.streamUrl}?t=${Date.now()}`
         await setPlayerSource(activePlayerIndex.value, streamUrl.value)
         await getActivePlayer().play()
