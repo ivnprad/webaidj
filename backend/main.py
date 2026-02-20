@@ -32,11 +32,6 @@ app.add_middleware(
 async def root():
     return {"message": "Hello World"}
 
-class PlayRequest(BaseModel):
-    path: Optional[str]=None # backward compatible
-    paths: list[str]=[]#playlist
-    start_index: int = 0
-
 PLAYLIST: list[dict] = []
 CURRENT_TRACK_INDEX: int = -1
 CURRENT_TRACK: Optional[dict]=None
@@ -120,7 +115,7 @@ def _stream_audio_file(track_file: Path, request: Request):
     )
 
 @app.post("/api/play")
-def play(payload: PlayRequest):
+def play():
     global CURRENT_TRACK,PLAYLIST, CURRENT_TRACK_INDEX
  
     #requested_paths = payload.paths if payload.paths else ([payload.path] if payload.path else [])
@@ -140,7 +135,7 @@ def play(payload: PlayRequest):
         })
 
     PLAYLIST = entries
-    CURRENT_TRACK_INDEX = payload.start_index % len(PLAYLIST)
+    CURRENT_TRACK_INDEX = 0
     _set_current_track(CURRENT_TRACK_INDEX)
 
     return CreateResponse()

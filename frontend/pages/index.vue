@@ -72,11 +72,6 @@ const debugOverlap = true
 const streamUrl = ref('')
 
 const currentTrackIndex = ref(0)
-const streamPlaylist = ref([
-  '/Users/ivanherrera/Music/Salsa/cuba/timba/100MBP/Mi_Historia_Entre_Tus_Dedos.m4a',
-  '/Users/ivanherrera/Music/Salsa/colombianas/90MBP/01_Oiga_Mir_Vea.m4a',
-  '/Users/ivanherrera/Music/Salsa/romanticas/88MBP/03_Conciencia.m4a'
-])
 
 const logOverlap = (...args) => {
     if (!debugOverlap) return
@@ -231,8 +226,7 @@ async function streamPlay() {
         overlapStarted.value = false
 
         const response = await $fetch('/api/play', {
-            method: 'POST',
-            body: { paths: streamPlaylist.value, start_index: 0 },
+            method: 'POST'
         })
 
         streamTrack.value = response.currentTrack
