@@ -15,6 +15,9 @@ from Logging.MainLogger import mainLogger
 
 silenceThresholdInDbfs= -35
 milisecondsToSeconds = 1/1000 
+MIN_CROSSFADE_SECONDS = 2.0
+MAX_CROSSFADE_SECONDS = 20.0
+DEFAULT_CROSSFADE_SECONDS = 6.0
 
 # def fade_out_and_stop(play_obj, fade_duration_ms,song,current_position):
 #     remaining_segment = song[current_position:]
@@ -138,6 +141,7 @@ def DetectSilencePortionsOfSong(song):
 def GetNonSilentStartTime(song):
     song = GetSongWithAudioSegment(song)
     durationMs = len(song)
+    nonSilentStartTimeInMs = durationMs
 
     for nonSilentStartTimeInMs in range(durationMs):
         if song[nonSilentStartTimeInMs].dBFS > silenceThresholdInDbfs:
@@ -147,7 +151,8 @@ def GetNonSilentStartTime(song):
 
 def GetNonSilentEndTime(song):
     song = GetSongWithAudioSegment(song)
-    durationMs = len(song)    
+    durationMs = len(song)
+    nonSilentEndTimeInMs = 0
 
     for nonSilentEndTimeInMs in range(durationMs - 1, -1, -1):
         if song[nonSilentEndTimeInMs].dBFS > silenceThresholdInDbfs:
@@ -160,23 +165,82 @@ def GetSongDuration(song):
     return len(song)*milisecondsToSeconds     
 
 def GetSilenceAtEndDuration(song):
-    return  GetSongDuration(song) - GetNonSilentEndTime(song)
+    return max(0.0, GetSongDuration(song) - GetNonSilentEndTime(song))
 
+
+# Beat/tempo match
+# Align BPM (or time-stretch slightly) so kicks/snare grids line up.
+
+# Phrase alignment
+# Start the incoming track on musical boundaries (often every 8/16/32 bars), not arbitrary seconds.
+
+# Harmonic compatibility
+# Prefer compatible keys (Camelot-style neighbors) or apply key shift carefully.
+
+# EQ-based blend
+# During overlap, reduce bass on one track to avoid low-end clash, then swap bass at phrase points.
+
+# Structured gain automation
+# Use controlled volume curves (not abrupt changes): intro in, outgoing out, with planned overlap length.
+
+# Section-aware transitions
+# Mix based on song parts (outro -> intro, break -> drop), using cue points/hot cues.
+
+# Loudness/headroom control
+# Keep perceived loudness consistent and avoid clipping/limiter pumping.
+
+# Safety constraints
+# Clamp min/max mix length, avoid dead air, detect problematic intros/outros.
+
+
+# What can be wrong in practice:
+
+# If either song has little/no silence, transition can feel abrupt.
+# If silenceAtEndDuration + nextStart > currentSongDuration, delay becomes negative.
+# It ignores tempo, phrasing, and beat alignment.
+# Silence detection thresholds can misclassify quiet intros/outros.
+# Loading full audio each time may be expensive.
 
 def CalculateTransition(currentSong,nextSong):
-    currentDeckSong = AudioSegment.from_file(GetMP3FromFile(currentSong))    
-    silenceAtEndDuration = GetSilenceAtEndDuration(currentDeckSong)
-    currentSongDuration = GetSongDuration(currentDeckSong)
+    currentMp3 = GetMP3FromFile(currentSong)
+    nextMp3 = GetMP3FromFile(nextSong)
 
-    nextDeckSong =AudioSegment.from_file(GetMP3FromFile(nextSong))
-    nextStart = GetNonSilentStartTime(nextDeckSong)
+    if currentMp3 is None or nextMp3 is None:
+        mainLogger.warning(
+            f"CalculateTransition fallback: unsupported audio extension. currentSong={currentSong}, nextSong={nextSong}"
+        )
+        return 0.0
 
-    crossfade = silenceAtEndDuration+nextStart 
-    delay = currentSongDuration-crossfade
+    try:
+        currentDeckSong = AudioSegment.from_file(currentMp3)
+        silenceAtEndDuration = max(0.0, GetSilenceAtEndDuration(currentDeckSong))
+        currentSongDuration = max(0.0, GetSongDuration(currentDeckSong))
 
-    mainLogger.debug(f"currentSongDuration {currentSongDuration} seconds. Crossfade {crossfade} seconds. Delay {delay} seconds")
+        nextDeckSong = AudioSegment.from_file(nextMp3)
+        nextSongLeadInSilenceSec = max(0.0, GetNonSilentStartTime(nextDeckSong))
+    except Exception as e:
+        mainLogger.warning(
+            f"CalculateTransition fallback due to analysis error. currentSong={currentSong}, nextSong={nextSong}, error={e}"
+        )
+        return 0.0
 
-    return delay
+    rawCrossfade = silenceAtEndDuration + nextSongLeadInSilenceSec
+    crossfade = max(MIN_CROSSFADE_SECONDS, min(MAX_CROSSFADE_SECONDS, rawCrossfade))
+    crossfade = min(crossfade, currentSongDuration)
+    nextSongStartTimeSec = max(0.0, currentSongDuration - crossfade)
 
+    # Fallback for very short or problematic tracks.
+    if currentSongDuration == 0.0:
+        nextSongStartTimeSec = 0.0
+    elif rawCrossfade <= 0.0:
+        crossfade = min(max(DEFAULT_CROSSFADE_SECONDS, MIN_CROSSFADE_SECONDS), currentSongDuration)
+        nextSongStartTimeSec = max(0.0, currentSongDuration - crossfade)
 
+    mainLogger.debug(
+        f"currentSong={os.path.basename(currentSong)}, nextSong={os.path.basename(nextSong)}, "
+        f"currentSongDuration={currentSongDuration:.3f}s, silenceAtEnd={silenceAtEndDuration:.3f}s, "
+        f"nextSongLeadInSilenceSec={nextSongLeadInSilenceSec:.3f}s, rawCrossfade={rawCrossfade:.3f}s, crossfade={crossfade:.3f}s, nextSongStartTimeSec={nextSongStartTimeSec:.3f}s"
+    )
+
+    return nextSongStartTimeSec
 

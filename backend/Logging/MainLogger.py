@@ -35,4 +35,7 @@ class SingletonLogger:
     def info(self, message):
         self.logger.info("AIDJ " + message)
 
+    def warning(self,message):
+        self.logger.warning("AIDJ "+ message)
+
 mainLogger = SingletonLogger()  # This will always return the same logger instance
