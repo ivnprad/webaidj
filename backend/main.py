@@ -6,24 +6,29 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from starlette.responses import Response, StreamingResponse
 from extractTrackMetaData import _extract_track_metadata
 from streamAudio import validate_audio_file,resolve_track_path, parse_byte_range
 
 from Core.CreateListOfSongs import CreateNewListOfSongs
 from Core.AudioProcessing import AnalyzeSongForTransitionWithCache, CalculateTransition
+import os 
 
 app = FastAPI()
 
-origins = [
-    "http://localhost:3000", # vue3 app
-    "http://localhost:8000",
-]
+def _get_allowed_origins() -> list[str]:
+    raw = os.getenv("CORS_ALLOW_ORIGINS", "")
+    parsed = [o.strip() for o in raw.split(",") if o.strip()]
+    defaults = ["http://localhost:3000", "http://localhost:8000"]
+    return list(dict.fromkeys(defaults + parsed))
+
+origins = _get_allowed_origins()
+vercel_preview_regex = os.getenv("CORS_ALLOW_ORIGIN_REGEX", "").strip()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=vercel_preview_regex or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

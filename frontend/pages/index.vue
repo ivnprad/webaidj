@@ -90,9 +90,24 @@ const togglePlayPause = async () => {
     await toggleDeckPlayPause()
 }
 
+const { public: { apiBase } } = useRuntimeConfig()
+const normalizedApiBase = String(apiBase || '').replace(/\/+$/, '')
+
+const buildApiUrl = (path) => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${normalizedApiBase}${normalizedPath}`
+}
+
+const buildStreamUrl = (pathWithQuery) => {
+  if (String(pathWithQuery).startsWith('http://') || String(pathWithQuery).startsWith('https://')) {
+    return String(pathWithQuery)
+  }
+  return buildApiUrl(pathWithQuery)
+}
+
 async function refreshOverlapSeconds() {
   try {
-    const response = await $fetch('/api/player/overlap')
+    const response = await $fetch(buildApiUrl('/api/player/overlap'))
     const value = Number(response?.overlapSeconds)
     if (Number.isFinite(value) && value >= 0) {
       setOverlapSeconds(value)
@@ -148,13 +163,13 @@ async function streamPlay() {
         setActivePlayer(0)
         overlapStarted.value = false
 
-        const response = await $fetch('/api/play', {
+        const response = await $fetch(buildApiUrl('/api/play'), {
             method: 'POST'
         })
 
         streamTrack.value = response.currentTrack
         hasStreamInitialized.value = true
-        streamUrl.value = `${response.streamUrl}?t=${Date.now()}`
+        streamUrl.value = buildStreamUrl(`${response.streamUrl}?t=${Date.now()}`)
         await setPlayerSource(activePlayerIndex.value, streamUrl.value)
         await getActivePlayer().play()
         currentTime.value = 0
@@ -170,7 +185,7 @@ async function streamPlay() {
 async function applyStreamTrackResponse(response, options = { overlap: false, direction: 'next' }) {
   const overlap = Boolean(options.overlap)
   const direction = options.direction || 'next'
-  const nextUrl = `${response.streamUrl}?t=${Date.now()}`
+  const nextUrl = buildStreamUrl(`${response.streamUrl}?t=${Date.now()}`)
   const incomingPlayerIndex = getInactivePlayerIndex()
 
   if (!overlap) {
@@ -205,13 +220,13 @@ async function applyStreamTrackResponse(response, options = { overlap: false, di
 
 async function playNextStreamTrack(options = { overlap: false }) {
   const overlap = Boolean(options.overlap)
-  const response = await $fetch('/api/play/next', { method: 'POST' })
+  const response = await $fetch(buildApiUrl('/api/play/next'), { method: 'POST' })
   await applyStreamTrackResponse(response, { overlap, direction: 'next' })
 }
 
 async function playPreviousStreamTrack(options = { overlap: false }) {
   const overlap = Boolean(options.overlap)
-  const response = await $fetch('/api/play/previous', { method: 'POST' })
+  const response = await $fetch(buildApiUrl('/api/play/previous'), { method: 'POST' })
   await applyStreamTrackResponse(response, { overlap, direction: 'previous' })
 }
 
