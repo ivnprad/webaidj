@@ -33,6 +33,11 @@ app.add_middleware(
 async def root():
     return {"message": "Hello World"}
 
+
+@app.get("/healthz")
+async def healthz():
+    return {"ok": True}
+
 PLAYLIST: list[dict] = []
 CURRENT_TRACK_INDEX: int = -1
 CURRENT_TRACK: Optional[dict]=None
