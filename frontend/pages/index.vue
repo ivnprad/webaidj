@@ -75,6 +75,7 @@ const {
     getInactivePlayerIndex,
     setActivePlayer,
     setPlayerSource,
+    setOverlapSeconds,
     stopPlayer,
     togglePlayPause: toggleDeckPlayPause,
     seekTo,
@@ -87,6 +88,20 @@ const {
 
 const togglePlayPause = async () => {
     await toggleDeckPlayPause()
+}
+
+async function refreshOverlapSeconds() {
+  try {
+    const response = await $fetch('/api/player/overlap')
+    const value = Number(response?.overlapSeconds)
+    if (Number.isFinite(value) && value >= 0) {
+      setOverlapSeconds(value)
+      logOverlap('updated overlapSeconds', { overlapSeconds: value, source: response?.source })
+      return
+    }
+  } catch (error) {
+    logOverlap('overlap api failed, keeping current overlapSeconds', { error })
+  }
 }
 
 const onProgressChangeFromShell = (time) => {
@@ -146,6 +161,7 @@ async function streamPlay() {
         duration.value = 0
         lastNearEndLogSecond.value = -1
         isPlaying.value = true
+        await refreshOverlapSeconds()
     } catch (error) {
         console.error('Error starting stream playback:', error)
     }
@@ -184,6 +200,7 @@ async function applyStreamTrackResponse(response, options = { overlap: false, di
   })
 
   isPlaying.value = true
+  await refreshOverlapSeconds()
 }
 
 async function playNextStreamTrack(options = { overlap: false }) {

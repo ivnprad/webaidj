@@ -12,6 +12,7 @@ from extractTrackMetaData import _extract_track_metadata
 from streamAudio import validate_audio_file,resolve_track_path, parse_byte_range
 
 from Core.CreateListOfSongs import CreateNewListOfSongs
+from Core.AudioProcessing import AnalyzeSongForTransitionWithCache, CalculateTransition
 
 app = FastAPI()
 
@@ -241,4 +242,52 @@ def player_status():
             "coverUrl": _cover_url_for_index(CURRENT_TRACK["index"], bool(CURRENT_TRACK.get("cover_data"))),
         },
         "startedAt": CURRENT_TRACK["startedAt"],
+    }
+
+
+@app.get("/api/player/overlap")
+def player_overlap():
+    if not PLAYLIST or CURRENT_TRACK_INDEX < 0:
+        raise HTTPException(status_code=404, detail="Playlist is empty")
+
+    if len(PLAYLIST) < 2:
+        return {
+            "overlapSeconds": 5.0,
+            "nextSongStartTimeSec": 0.0,
+            "currentSongDurationSec": 0.0,
+            "currentTrackIndex": CURRENT_TRACK_INDEX,
+            "nextTrackIndex": CURRENT_TRACK_INDEX,
+            "source": "default_single_track",
+        }
+
+    current_index = CURRENT_TRACK_INDEX
+    next_index = (CURRENT_TRACK_INDEX + 1) % len(PLAYLIST)
+    current_song_path = PLAYLIST[current_index]["absolute_path"]
+    next_song_path = PLAYLIST[next_index]["absolute_path"]
+
+    try:
+        next_song_start_time_sec = float(CalculateTransition(current_song_path, next_song_path))
+        current_song_analysis = AnalyzeSongForTransitionWithCache(current_song_path)
+        current_song_duration_sec = float(current_song_analysis["durationSec"])
+        overlap_seconds = max(0.0, current_song_duration_sec - next_song_start_time_sec)
+    except Exception:
+        overlap_seconds = 5.0
+        next_song_start_time_sec = 0.0
+        current_song_duration_sec = 0.0
+        return {
+            "overlapSeconds": overlap_seconds,
+            "nextSongStartTimeSec": next_song_start_time_sec,
+            "currentSongDurationSec": current_song_duration_sec,
+            "currentTrackIndex": current_index,
+            "nextTrackIndex": next_index,
+            "source": "default_error",
+        }
+
+    return {
+        "overlapSeconds": overlap_seconds,
+        "nextSongStartTimeSec": next_song_start_time_sec,
+        "currentSongDurationSec": current_song_duration_sec,
+        "currentTrackIndex": current_index,
+        "nextTrackIndex": next_index,
+        "source": "audio_processing",
     }

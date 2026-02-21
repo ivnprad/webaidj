@@ -88,7 +88,7 @@ interface CreateProgressTrackingDeps {
   currentTime: Ref<number>
   duration: Ref<number>
   lastNearEndLogSecond: Ref<number>
-  overlapSeconds: number
+  overlapSeconds: Ref<number>
   onOverlapTrigger?: OverlapCallback
   log: Logger
 }
@@ -119,8 +119,8 @@ function createProgressTracking(deps: CreateProgressTrackingDeps) {
   const maybeTriggerOverlap = async () => {
     if (!onOverlapTrigger) return
     if (overlapStarted.value || !isPlaying.value) return
-    if (!(duration.value > overlapSeconds)) return
-    if (currentTime.value < duration.value - overlapSeconds) return
+    if (!(duration.value > overlapSeconds.value)) return
+    if (currentTime.value < duration.value - overlapSeconds.value) return
 
     overlapStarted.value = true
     try {
@@ -139,7 +139,7 @@ function createProgressTracking(deps: CreateProgressTrackingDeps) {
     duration.value = Number.isFinite(active.duration) ? active.duration : 0
 
     const remaining = duration.value - currentTime.value
-    if (Number.isFinite(remaining) && remaining <= overlapSeconds + 1 && remaining >= 0) {
+    if (Number.isFinite(remaining) && remaining <= overlapSeconds.value + 1 && remaining >= 0) {
       const floored = Math.floor(remaining)
       if (floored !== lastNearEndLogSecond.value) {
         lastNearEndLogSecond.value = floored
@@ -169,7 +169,7 @@ interface UseDualDeckPlayerOptions {
 
 export function useDualDeckPlayer(options: UseDualDeckPlayerOptions = {}) {
   // options
-  const overlapSeconds = options.overlapSeconds ?? 5
+  const overlapSeconds = ref(options.overlapSeconds ?? 5)
   const pollIntervalMs = options.pollIntervalMs ?? 100
   const onOverlapTrigger = options.onOverlapTrigger
   const log = options.logger ?? (() => {})
@@ -208,6 +208,11 @@ export function useDualDeckPlayer(options: UseDualDeckPlayerOptions = {}) {
   const setPlayerSource = async (index: number, source: string) => {
     playerSources.value[index] = source
     await nextTick()
+  }
+
+  const setOverlapSeconds = (seconds: number) => {
+    if (!Number.isFinite(seconds)) return
+    overlapSeconds.value = Math.max(0, seconds)
   }
 
   // transport
@@ -271,7 +276,7 @@ export function useDualDeckPlayer(options: UseDualDeckPlayerOptions = {}) {
     getInactivePlayerIndex,
     setActivePlayer,
     setPlayerSource,
-
+    setOverlapSeconds,
     stopPlayer,
     pausePlayer,
     stopAll,
