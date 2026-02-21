@@ -4,6 +4,7 @@ import pygame
 import librosa
 import tempfile
 import soundfile as sf
+import json
 from pydub import AudioSegment
 import os
 import time
@@ -18,6 +19,7 @@ milisecondsToSeconds = 1/1000
 MIN_CROSSFADE_SECONDS = 2.0
 MAX_CROSSFADE_SECONDS = 20.0
 DEFAULT_CROSSFADE_SECONDS = 6.0
+ANALYSIS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "audio_analysis_cache.json")
 
 # def fade_out_and_stop(play_obj, fade_duration_ms,song,current_position):
 #     remaining_segment = song[current_position:]
@@ -168,6 +170,84 @@ def GetSilenceAtEndDuration(song):
     return max(0.0, GetSongDuration(song) - GetNonSilentEndTime(song))
 
 
+def _loadAnalysisCache(cacheFilePath):
+    if not os.path.exists(cacheFilePath):
+        return {}
+    try:
+        with open(cacheFilePath, "r", encoding="utf-8") as cacheFile:
+            data = json.load(cacheFile)
+            if isinstance(data, dict):
+                return data
+            return {}
+    except Exception:
+        return {}
+
+
+def _saveAnalysisCache(cacheFilePath, cache):
+    cacheDirectory = os.path.dirname(cacheFilePath)
+    if cacheDirectory:
+        os.makedirs(cacheDirectory, exist_ok=True)
+
+    tempCacheFilePath = f"{cacheFilePath}.tmp"
+    with open(tempCacheFilePath, "w", encoding="utf-8") as cacheFile:
+        json.dump(cache, cacheFile, indent=2, sort_keys=True)
+
+    os.replace(tempCacheFilePath, cacheFilePath)
+
+
+def AnalyzeSongForTransitionWithCache(songPath, cacheFilePath=ANALYSIS_CACHE_FILE):
+    """
+    Analyze a song once and cache reusable transition metrics in JSON.
+    Returns:
+    {
+      "durationSec": float,
+      "silenceAtEndSec": float,
+      "nonSilentStartSec": float
+    }
+    """
+    mp3Path = GetMP3FromFile(songPath)
+    if mp3Path is None:
+        raise ValueError(f"Unsupported audio extension for songPath={songPath}")
+
+    normalizedPath = os.path.abspath(mp3Path)
+    fileStats = os.stat(normalizedPath)
+    fileSize = int(fileStats.st_size)
+    modifiedTime = float(fileStats.st_mtime)
+
+    cache = _loadAnalysisCache(cacheFilePath)
+    cacheKey = normalizedPath
+    cachedEntry = cache.get(cacheKey)
+
+    if isinstance(cachedEntry, dict):
+        if cachedEntry.get("size") == fileSize and cachedEntry.get("mtime") == modifiedTime:
+            return {
+                "durationSec": float(cachedEntry.get("durationSec", 0.0)),
+                "silenceAtEndSec": float(cachedEntry.get("silenceAtEndSec", 0.0)),
+                "nonSilentStartSec": float(cachedEntry.get("nonSilentStartSec", 0.0)),
+            }
+
+    song = AudioSegment.from_file(normalizedPath)
+    analyzedDuration = max(0.0, GetSongDuration(song))
+    analyzedSilenceAtEnd = max(0.0, GetSilenceAtEndDuration(song))
+    analyzedNonSilentStart = max(0.0, GetNonSilentStartTime(song))
+
+    cache[cacheKey] = {
+        "size": fileSize,
+        "mtime": modifiedTime,
+        "durationSec": analyzedDuration,
+        "silenceAtEndSec": analyzedSilenceAtEnd,
+        "nonSilentStartSec": analyzedNonSilentStart,
+        "silenceThresholdInDbfs": silenceThresholdInDbfs,
+    }
+    _saveAnalysisCache(cacheFilePath, cache)
+
+    return {
+        "durationSec": analyzedDuration,
+        "silenceAtEndSec": analyzedSilenceAtEnd,
+        "nonSilentStartSec": analyzedNonSilentStart,
+    }
+
+
 # Beat/tempo match
 # Align BPM (or time-stretch slightly) so kicks/snare grids line up.
 
@@ -201,6 +281,8 @@ def GetSilenceAtEndDuration(song):
 # Silence detection thresholds can misclassify quiet intros/outros.
 # Loading full audio each time may be expensive.
 
+# Use AnalyzeSongForTransitionWithCache
+# caching analysis results (duration, end silence, non-silent start) per file so you decode once per track, not per transition.
 def CalculateTransition(currentSong,nextSong):
     currentMp3 = GetMP3FromFile(currentSong)
     nextMp3 = GetMP3FromFile(nextSong)
@@ -243,4 +325,3 @@ def CalculateTransition(currentSong,nextSong):
     )
 
     return nextSongStartTimeSec
-
