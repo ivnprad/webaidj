@@ -94,3 +94,18 @@ Check out the [deployment documentation](https://nuxt.com/docs/getting-started/d
 ### Nice to Have
 
 - [ ] Improve transition UX: show loading/buffering state, queued-track indication, and clearer overlap handoff feedback. (`frontend/pages/index.vue:154`, `frontend/pages/index.vue:178`, `frontend/components/AudioPlayerShell.vue:37`)
+
+
+# Terminal 1 (backend on Raspberry)
+source .venv/bin/activate
+export CORS_ALLOW_ORIGINS="https://webaidj.vercel.app"
+unset CORS_ALLOW_ORIGIN_REGEX
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+
+# Terminal 2 (same machine)
+cloudflared tunnel --url http://localhost:8000
+
+Then copy the new https://...trycloudflare.com URL into your Vercel env var (NUXT_PUBLIC_API_BASE) and redeploy.
+Quick tunnels rotate every time, so you must update Vercel each time unless you switch to a named tunnel.
+
