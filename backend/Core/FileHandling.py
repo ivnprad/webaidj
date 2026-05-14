@@ -85,14 +85,16 @@ def ListOfSongsPlayed(fileName=songsPlayedFile):
 
     return songs
 
-def GetDirectory(fileName=directoryFile):
+def GetDirectory(genre, fileName=directoryFile):
     try:
         with open(fileName,"r") as file:
             directory=json.load(file)
     except FileNotFoundError:
-        directory=None
-    
-    return directory
+        return None
+
+    if genre == "both":
+        return list(directory.values())
+    return directory.get(genre)
 
 def SaveDirectory(directoryName, fileName=directoryFile):
     with open(fileName,'w') as file:

@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from starlette.responses import Response, StreamingResponse
 from extractTrackMetaData import _extract_track_metadata
 from streamAudio import validate_audio_file,resolve_track_path, parse_byte_range
@@ -42,6 +43,9 @@ async def root():
 @app.get("/healthz")
 async def healthz():
     return {"ok": True}
+
+class PlayRequest(BaseModel):
+    genre: str = "salsa"
 
 PLAYLIST: list[dict] = []
 CURRENT_TRACK_INDEX: int = -1
@@ -126,11 +130,10 @@ def _stream_audio_file(track_file: Path, request: Request):
     )
 
 @app.post("/api/play")
-def play():
+def play(payload: Optional[PlayRequest] = None):
     global CURRENT_TRACK,PLAYLIST, CURRENT_TRACK_INDEX
- 
-    #requested_paths = payload.paths if payload.paths else ([payload.path] if payload.path else [])
-    requested_paths = CreateNewListOfSongs()
+
+    requested_paths = CreateNewListOfSongs(payload.genre if payload else "salsa")
     if not requested_paths:
         raise HTTPException(status_code=400, detail="path or paths is required")
 

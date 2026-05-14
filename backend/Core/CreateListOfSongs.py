@@ -20,28 +20,34 @@ def GetPreviousSessionSongs(jsonFile=currentSongFile):
         raise ValueError("currentSongPath not found")
     return subsetList
 
-#TODO pack FirstGenerativePattern in one function -> better set time in hours 
-def CreateNewListOfSongs():
+#TODO pack FirstGenerativePattern in one function -> better set time in hours
+def CreateNewListOfSongs(genre):
     DeleteFile(songsListFile)
 
-    folderPath = GetDirectory()
-    if not os.path.isdir(folderPath):
-        raise FileNotFoundError(f"folder path does not exist: {folderPath}")
+    folderPaths = GetDirectory(genre)
+    if folderPaths is None:
+        raise ValueError(f"Unknown genre: {genre}")
 
-    if folderPath is None:
-        # TODO replace this with ttink in the main GUI
-        raise ValueError("Do not use ttinker to ask for directory because it is being in the main")
-        folderPath = SelecDirectory()
-        SaveDirectory(folderPath)
-    ConvertM4AtoMp3(folderPath)
-    songPaths = ListFilesInFolderRecursively(folderPath)
+    if isinstance(folderPaths, str):
+        folderPaths = [folderPaths]
+
+    for path in folderPaths:
+        if not os.path.isdir(path):
+            raise FileNotFoundError(f"folder path does not exist: {path}")
+
+    songPaths = []
+    for path in folderPaths:
+        ConvertM4AtoMp3(path)
+        songPaths.extend(ListFilesInFolderRecursively(path))
+
+    songPathsSet = set(songPaths)
     songData = GetSongData()
-    songsPlayed = ListOfSongsPlayed()
+    songsPlayed = set(ListOfSongsPlayed())
 
-    # For song list in the give directory tha end with .mp3 and are not in songData calculate Beats
+    # For song list in the given directory that end with .mp3 and are not in songData calculate Beats
     for song in songPaths:
-        if not song.endswith(".mp3"):# TODO check if song name in .m4a is in .mp3 if not convert it 
-            continue 
+        if not song.endswith(".mp3"):# TODO check if song name in .m4a is in .mp3 if not convert it
+            continue
         if song not in songData:
             floatBeats = CalculateBeats(song)
             beats = round(floatBeats[0])
@@ -50,9 +56,9 @@ def CreateNewListOfSongs():
     SaveToJson(songData, filename=songBeatsFile) # update list to json
 
     songDataClean = {}
-    for song,beat in songData.items():
-        if song not in songsPlayed:
-            songDataClean[song]=beat
+    for song, beat in songData.items():
+        if song in songPathsSet and song not in songsPlayed:
+            songDataClean[song] = beat
 
     sortedSongsDict = FirstGenerativePattern(songDataClean)
     sortedSongsDict2 = FirstGenerativePattern(songDataClean,Pattern.PATTERN_DESCENDING)
