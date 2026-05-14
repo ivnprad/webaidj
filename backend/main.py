@@ -45,7 +45,9 @@ async def healthz():
     return {"ok": True}
 
 class PlayRequest(BaseModel):
-    genre: str = "salsa"
+    genre: str = "both"
+    salsa_n: int = 3
+    bachata_n: int = 3
 
 PLAYLIST: list[dict] = []
 CURRENT_TRACK_INDEX: int = -1
@@ -133,7 +135,8 @@ def _stream_audio_file(track_file: Path, request: Request):
 def play(payload: Optional[PlayRequest] = None):
     global CURRENT_TRACK,PLAYLIST, CURRENT_TRACK_INDEX
 
-    requested_paths = CreateNewListOfSongs(payload.genre if payload else "salsa")
+    p = payload or PlayRequest()
+    requested_paths = CreateNewListOfSongs(p.genre, salsa_n=p.salsa_n, bachata_n=p.bachata_n)
     if not requested_paths:
         raise HTTPException(status_code=400, detail="path or paths is required")
 
