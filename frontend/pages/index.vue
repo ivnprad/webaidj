@@ -7,11 +7,13 @@
   :is-playing="isPlaying"
   :show-transport-controls="hasStreamInitialized"
   :response-message="responseMessage"
+  :selected-genre="selectedGenre"
   @previous="previousTrack"
   @play-pause="togglePlayPause"
   @next="nextTrack"
   @seek="onProgressChangeFromShell"
   @stream-play="streamPlay"
+  @genre-change="selectedGenre = $event"
 />
 
 <audio
@@ -37,6 +39,7 @@ import { useDualDeckPlayer } from '~/composables/useDualDeckPlayer'
 
 const responseMessage = ref('');
 const hasStreamInitialized = ref(false)
+const selectedGenre = ref('both')
 
 const streamTrack = ref(null) // {title, artist}
 const displayTrack = computed(() => streamTrack.value || {
@@ -164,7 +167,8 @@ async function streamPlay() {
         overlapStarted.value = false
 
         const response = await $fetch(buildApiUrl('/api/play'), {
-            method: 'POST'
+            method: 'POST',
+            body: { genre: selectedGenre.value }
         })
 
         streamTrack.value = response.currentTrack

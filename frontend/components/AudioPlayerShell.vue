@@ -34,6 +34,15 @@
         </button>
       </div>
 
+      <div class="genre-selector">
+        <button
+          v-for="g in ['salsa', 'bachata', 'both']"
+          :key="g"
+          :class="['genre-btn', { active: selectedGenre === g }]"
+          @click="emit('genre-change', g)"
+        >{{ g }}</button>
+      </div>
+
       <div class="backend-controls">
         <button @click="emit('stream-play')" class="control-btn stream-play" aria-label="Stream Play">
           <i class="fas fa-random"></i>
@@ -53,6 +62,7 @@ const props = defineProps({
   duration: { type: Number, required: true },
   isPlaying: { type: Boolean, required: true },
   showTransportControls: { type: Boolean, default: false },
+  selectedGenre: { type: String, required: true },
 })
 
 const emit = defineEmits([
@@ -62,6 +72,7 @@ const emit = defineEmits([
   'seek',
   'stream-play',
   'toggle-shuffle',
+  'genre-change',
 ])
 
 const onSeek = (event) => {
@@ -200,5 +211,33 @@ const formatTime = (time) => {
 
 .play-pause:hover {
   animation: pulse 1s infinite;
+}
+
+.genre-selector {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.genre-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  border-radius: 12px;
+  padding: 4px 12px;
+  font-size: 0.75em;
+  cursor: pointer;
+  text-transform: capitalize;
+  transition: background 0.2s;
+}
+
+.genre-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.genre-btn.active {
+  background: rgba(255, 255, 255, 0.4);
+  border-color: white;
+  font-weight: bold;
 }
 </style>
