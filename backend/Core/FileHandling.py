@@ -2,6 +2,7 @@ import os
 import json
 
 from Core.Utilities import SubSetFromKey
+from Core.Constants import GENRE_DUAL
 
 scriptDir = os.path.dirname(__file__)
 songBeatsFile = os.path.join(scriptDir, '../ConfigurationFiles', 'songBeats.json')
@@ -92,7 +93,7 @@ def GetDirectory(genre, fileName=directoryFile):
     except FileNotFoundError:
         return None
 
-    if genre == "dual":
+    if genre == GENRE_DUAL:
         return list(directory.values())
     return directory.get(genre)
 

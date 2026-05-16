@@ -36,10 +36,11 @@
 
 import { computed, ref } from 'vue'
 import { useDualDeckPlayer } from '~/composables/useDualDeckPlayer'
+import { DEFAULT_GENRE } from '~/constants/genres'
 
 const responseMessage = ref('');
 const hasStreamInitialized = ref(false)
-const selectedGenre = ref('dual')
+const selectedGenre = ref(DEFAULT_GENRE)
 
 const streamTrack = ref(null) // {title, artist}
 const displayTrack = computed(() => streamTrack.value || {

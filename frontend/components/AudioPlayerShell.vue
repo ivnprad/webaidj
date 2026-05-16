@@ -36,7 +36,7 @@
 
       <div class="genre-selector">
         <button
-          v-for="g in ['salsa', 'bachata', 'dual']"
+          v-for="g in GENRES"
           :key="g"
           :class="['genre-btn', { active: selectedGenre === g }]"
           @click="emit('genre-change', g)"
@@ -53,6 +53,7 @@
 </template>
 
 <script setup>
+import { GENRES } from '~/constants/genres'
 
 // UI props. AudioPlayerShell is a presentational component driven by props.
 const props = defineProps({

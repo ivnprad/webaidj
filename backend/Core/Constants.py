@@ -1,0 +1,4 @@
+GENRE_SALSA = "salsa"
+GENRE_BACHATA = "bachata"
+GENRE_DUAL = "dual"
+DEFAULT_GENRE = GENRE_DUAL

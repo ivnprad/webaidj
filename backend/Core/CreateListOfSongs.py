@@ -4,6 +4,7 @@ from Core.FileHandling import SaveToJson, songBeatsFile
 from Core.PatternGeneration import FirstGenerativePattern, Pattern
 from Core.UI import SelecDirectory
 from Core.AudioProcessing import ConvertM4AtoMp3, CalculateBeats
+from Core.Constants import GENRE_SALSA, GENRE_BACHATA, GENRE_DUAL
 import os
 
 def GetPreviousSessionSongs(jsonFile=currentSongFile):
@@ -47,9 +48,9 @@ def InterleaveGenres(salsa_list, bachata_list, salsa_n, bachata_n):
 def CreateNewListOfSongs(genre, salsa_n=3, bachata_n=3):
     DeleteFile(songsListFile)
 
-    if genre == "dual":
-        salsaPath = GetDirectory("salsa")
-        bachataPath = GetDirectory("bachata")
+    if genre == GENRE_DUAL:
+        salsaPath = GetDirectory(GENRE_SALSA)
+        bachataPath = GetDirectory(GENRE_BACHATA)
         if not salsaPath or not os.path.isdir(salsaPath):
             raise FileNotFoundError(f"Salsa folder not found: {salsaPath}")
         if not bachataPath or not os.path.isdir(bachataPath):

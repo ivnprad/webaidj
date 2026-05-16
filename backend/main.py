@@ -13,6 +13,7 @@ from streamAudio import validate_audio_file,resolve_track_path, parse_byte_range
 
 from Core.CreateListOfSongs import CreateNewListOfSongs
 from Core.AudioProcessing import AnalyzeSongForTransitionWithCache, CalculateTransition
+from Core.Constants import DEFAULT_GENRE
 import os 
 
 app = FastAPI()
@@ -45,7 +46,7 @@ async def healthz():
     return {"ok": True}
 
 class PlayRequest(BaseModel):
-    genre: str = "dual"
+    genre: str = DEFAULT_GENRE
     salsa_n: int = 3
     bachata_n: int = 3
 
