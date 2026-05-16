@@ -45,7 +45,7 @@ async def healthz():
     return {"ok": True}
 
 class PlayRequest(BaseModel):
-    genre: str = "both"
+    genre: str = "dual"
     salsa_n: int = 3
     bachata_n: int = 3
 

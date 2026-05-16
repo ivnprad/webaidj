@@ -92,7 +92,7 @@ def GetDirectory(genre, fileName=directoryFile):
     except FileNotFoundError:
         return None
 
-    if genre == "both":
+    if genre == "dual":
         return list(directory.values())
     return directory.get(genre)
 

@@ -47,7 +47,7 @@ def InterleaveGenres(salsa_list, bachata_list, salsa_n, bachata_n):
 def CreateNewListOfSongs(genre, salsa_n=3, bachata_n=3):
     DeleteFile(songsListFile)
 
-    if genre == "both":
+    if genre == "dual":
         salsaPath = GetDirectory("salsa")
         bachataPath = GetDirectory("bachata")
         if not salsaPath or not os.path.isdir(salsaPath):

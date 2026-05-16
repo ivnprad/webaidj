@@ -39,7 +39,7 @@ import { useDualDeckPlayer } from '~/composables/useDualDeckPlayer'
 
 const responseMessage = ref('');
 const hasStreamInitialized = ref(false)
-const selectedGenre = ref('both')
+const selectedGenre = ref('dual')
 
 const streamTrack = ref(null) // {title, artist}
 const displayTrack = computed(() => streamTrack.value || {

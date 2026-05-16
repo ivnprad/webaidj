@@ -36,7 +36,7 @@
 
       <div class="genre-selector">
         <button
-          v-for="g in ['salsa', 'bachata', 'both']"
+          v-for="g in ['salsa', 'bachata', 'dual']"
           :key="g"
           :class="['genre-btn', { active: selectedGenre === g }]"
           @click="emit('genre-change', g)"
