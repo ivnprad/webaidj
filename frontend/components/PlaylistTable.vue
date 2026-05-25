@@ -1,6 +1,54 @@
 <template>
   <div class="playlist-container">
-    <h3 class="playlist-title">Playlist</h3>
+    <div class="playlist-header">
+      <h3 class="playlist-title">Playlist</h3>
+
+      <div class="add-song-section">
+        <button class="toggle-add-btn" @click="showAddForm = !showAddForm">
+          <i class="fas fa-plus"></i> Add Song
+        </button>
+
+        <div v-if="showAddForm" class="add-song-form">
+          <div class="form-row">
+            <select v-model="addGenre" class="genre-select">
+              <option value="salsa">Salsa</option>
+              <option value="bachata">Bachata</option>
+            </select>
+            <div class="search-wrap">
+              <input
+                v-model="searchQuery"
+                type="text"
+                class="search-input"
+                placeholder="Search songs..."
+                @input="onSearchInput"
+              />
+              <ul v-if="filteredSongs.length > 0" class="song-dropdown">
+                <li
+                  v-for="song in filteredSongs"
+                  :key="song.path"
+                  class="song-option"
+                  @click="selectSong(song)"
+                >
+                  <span class="song-name">{{ song.name }}</span>
+                  <span v-if="song.bpm" class="song-bpm">{{ song.bpm }} BPM</span>
+                </li>
+              </ul>
+            </div>
+            <input
+              v-model="selectedPath"
+              type="text"
+              class="path-input"
+              placeholder="or paste path directly"
+            />
+            <button class="add-btn" :disabled="!selectedPath || adding" @click="submitAdd">
+              <i :class="adding ? 'fas fa-spinner fa-spin' : 'fas fa-plus'"></i>
+              {{ adding ? 'Adding…' : 'Add' }}
+            </button>
+          </div>
+          <p v-if="addMessage" :class="['add-message', addMessageType]">{{ addMessage }}</p>
+        </div>
+      </div>
+    </div>
 
     <div v-if="tracks.length === 0" class="empty-state">No tracks loaded — press play to start a session.</div>
 
@@ -36,52 +84,6 @@
         </tr>
       </tbody>
     </table>
-
-    <div class="add-song-section">
-      <button class="toggle-add-btn" @click="showAddForm = !showAddForm">
-        <i class="fas fa-plus"></i> Add Song
-      </button>
-
-      <div v-if="showAddForm" class="add-song-form">
-        <div class="form-row">
-          <select v-model="addGenre" class="genre-select">
-            <option value="salsa">Salsa</option>
-            <option value="bachata">Bachata</option>
-          </select>
-          <div class="search-wrap">
-            <input
-              v-model="searchQuery"
-              type="text"
-              class="search-input"
-              placeholder="Search songs..."
-              @input="onSearchInput"
-            />
-            <ul v-if="filteredSongs.length > 0" class="song-dropdown">
-              <li
-                v-for="song in filteredSongs"
-                :key="song.path"
-                class="song-option"
-                @click="selectSong(song)"
-              >
-                <span class="song-name">{{ song.name }}</span>
-                <span v-if="song.bpm" class="song-bpm">{{ song.bpm }} BPM</span>
-              </li>
-            </ul>
-          </div>
-          <input
-            v-model="selectedPath"
-            type="text"
-            class="path-input"
-            placeholder="or paste path directly"
-          />
-          <button class="add-btn" :disabled="!selectedPath || adding" @click="submitAdd">
-            <i :class="adding ? 'fas fa-spinner fa-spin' : 'fas fa-plus'"></i>
-            {{ adding ? 'Adding…' : 'Add' }}
-          </button>
-        </div>
-        <p v-if="addMessage" :class="['add-message', addMessageType]">{{ addMessage }}</p>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -172,13 +174,23 @@ const formatDuration = (sec) => {
   color: white;
 }
 
+.playlist-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
 .playlist-title {
   font-size: 1em;
   font-weight: bold;
-  margin: 0 0 12px;
+  margin: 0;
   opacity: 0.8;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  line-height: 2;
 }
 
 .empty-state {
@@ -257,7 +269,9 @@ const formatDuration = (sec) => {
 .genre-badge.unknown { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.5); }
 
 .add-song-section {
-  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .toggle-add-btn {
