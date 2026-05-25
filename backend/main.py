@@ -12,9 +12,10 @@ from extractTrackMetaData import _extract_track_metadata
 from streamAudio import validate_audio_file,resolve_track_path, parse_byte_range
 
 from Core.CreateListOfSongs import CreateNewListOfSongs
-from Core.AudioProcessing import AnalyzeSongForTransitionWithCache, CalculateTransition
-from Core.Constants import DEFAULT_GENRE
-import os 
+from Core.AudioProcessing import AnalyzeSongForTransitionWithCache, CalculateTransition, CalculateBeats
+from Core.Constants import DEFAULT_GENRE, GENRE_SALSA, GENRE_BACHATA
+from Core.FileHandling import GetSongData, GetDirectory, ListFilesInFolderRecursively, SaveToJson, songBeatsFile
+import os
 
 app = FastAPI()
 
@@ -244,6 +245,118 @@ def playlist_track_cover(index: int):
         content=cover_data,
         media_type=metadata.get("cover_mime") or "application/octet-stream",
     )
+
+_TRACK_INFO_CACHE: dict[str, dict] = {}
+
+def _get_track_info(absolute_path: str) -> dict:
+    if absolute_path in _TRACK_INFO_CACHE:
+        return _TRACK_INFO_CACHE[absolute_path]
+    track_file = Path(absolute_path)
+    metadata = _extract_track_metadata(track_file)
+    duration_sec = None
+    try:
+        from mutagen._file import File as MutagenFile
+        audio = MutagenFile(track_file)
+        if audio and hasattr(audio, "info") and hasattr(audio.info, "length"):
+            duration_sec = float(audio.info.length)
+    except Exception:
+        pass
+    info = {"title": metadata["title"], "artist": metadata["artist"], "duration_sec": duration_sec}
+    _TRACK_INFO_CACHE[absolute_path] = info
+    return info
+
+def _genre_for_path(absolute_path: str) -> str:
+    salsa_dir = GetDirectory(GENRE_SALSA)
+    bachata_dir = GetDirectory(GENRE_BACHATA)
+    if salsa_dir and absolute_path.startswith(str(salsa_dir)):
+        return GENRE_SALSA
+    if bachata_dir and absolute_path.startswith(str(bachata_dir)):
+        return GENRE_BACHATA
+    return "unknown"
+
+@app.get("/api/playlist")
+def get_playlist():
+    song_data = GetSongData()
+    tracks = []
+    for i, entry in enumerate(PLAYLIST):
+        abs_path = entry["absolute_path"]
+        info = _get_track_info(abs_path)
+        tracks.append({
+            "index": i,
+            "title": info["title"],
+            "artist": info["artist"],
+            "durationSec": info["duration_sec"],
+            "bpm": song_data.get(abs_path),
+            "genre": _genre_for_path(abs_path),
+        })
+    return {"tracks": tracks, "currentIndex": CURRENT_TRACK_INDEX}
+
+@app.get("/api/songs")
+def list_songs(genre: str = GENRE_SALSA):
+    folder = GetDirectory(genre)
+    if not folder or not os.path.isdir(str(folder)):
+        return {"songs": []}
+    song_data = GetSongData()
+    paths = ListFilesInFolderRecursively(str(folder))
+    songs = []
+    for path in sorted(paths):
+        songs.append({
+            "path": path,
+            "name": os.path.splitext(os.path.basename(path))[0],
+            "bpm": song_data.get(path),
+        })
+    return {"songs": songs}
+
+class AddSongRequest(BaseModel):
+    path: str
+    genre: str
+
+@app.post("/api/playlist/add")
+def add_to_playlist(payload: AddSongRequest):
+    global PLAYLIST
+    track_file = resolve_track_path(payload.path)
+    if not track_file.exists() or not track_file.is_file():
+        raise HTTPException(status_code=404, detail="Track not found")
+    validate_audio_file(track_file)
+
+    abs_path = str(track_file)
+    song_data = GetSongData()
+    bpm = song_data.get(abs_path)
+    if bpm is None:
+        try:
+            float_beats = CalculateBeats(abs_path)
+            bpm = round(float_beats[0])
+            SaveToJson({abs_path: bpm}, filename=songBeatsFile)
+        except Exception:
+            bpm = 0
+
+    new_entry = {"path": payload.path, "absolute_path": abs_path}
+
+    # Insert after current track, sorted by BPM among same-genre songs
+    insert_at = len(PLAYLIST)
+    same_genre_positions = [
+        i for i in range(CURRENT_TRACK_INDEX + 1, len(PLAYLIST))
+        if _genre_for_path(PLAYLIST[i]["absolute_path"]) == payload.genre
+    ]
+    for i in same_genre_positions:
+        existing_bpm = song_data.get(PLAYLIST[i]["absolute_path"]) or 0
+        if bpm <= existing_bpm:
+            insert_at = i
+            break
+
+    PLAYLIST.insert(insert_at, new_entry)
+    return {"ok": True, "insertedAt": insert_at, "bpm": bpm, "playlistLength": len(PLAYLIST)}
+
+@app.post("/api/play/jump/{index}")
+def play_jump(index: int):
+    global CURRENT_TRACK_INDEX
+    if not PLAYLIST:
+        raise HTTPException(status_code=404, detail="Playlist is empty")
+    if index < 0 or index >= len(PLAYLIST):
+        raise HTTPException(status_code=404, detail="Index out of range")
+    CURRENT_TRACK_INDEX = index
+    _set_current_track(CURRENT_TRACK_INDEX)
+    return CreateResponse()
 
 @app.get("/api/player/status")
 def player_status():
