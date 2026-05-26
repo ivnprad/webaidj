@@ -44,7 +44,6 @@ def InterleaveGenres(salsa_list, bachata_list, salsa_n, bachata_n):
                 bi += 1
     return result
 
-#TODO pack FirstGenerativePattern in one function -> better set time in hours
 def CreateNewListOfSongs(genre, salsa_n=3, bachata_n=3):
     DeleteFile(songsListFile)
 
